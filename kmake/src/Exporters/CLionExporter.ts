@@ -15,7 +15,6 @@ export class CLionExporter extends Exporter {
 	async exportSolution(project: Project, from: string, to: string, platform: string, vrApi: any, options: any): Promise<void> {
 		let name = project.getSafeName();
 
-		const indir = path.join(__dirname, '..', '..', 'Data', 'linux');
 		fs.ensureDirSync(path.resolve(to, name, '.idea'));
 
 		let misc = require('fs').getEmbeddedData()['linux_idea_misc_xml'];

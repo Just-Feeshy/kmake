@@ -124,7 +124,7 @@ export class CMakeExporter extends Exporter {
 				this.p('set(CMAKE_C_STANDARD 23)');
 				break;
 			default:
-				this.p('set(CMAKE_C_STANDARD 90)');
+				this.p('set(CMAKE_C_STANDARD 99)');
 				break;
 		}
 
