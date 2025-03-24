@@ -426,6 +426,9 @@ function compileKong(project: Project, from: string, to: string, platform: strin
 			params.push(platform);
 			params.push('-a');
 			params.push(api);
+			if (debug) {
+				params.push('--debug');
+			}
 			for (const dir of dirs) {
 				params.push('-i');
 				params.push(path.resolve(from, dir));
