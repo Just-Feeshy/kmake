@@ -673,6 +673,9 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 		throw 'No exporter found for platform ' + platform + '.';
 	}*/
 
+	if (Project.koreDir) {
+		fs.writeFileSync(path.join(to, 'korepath'), path.relative(from, Project.koreDir), 'utf8');
+	}
 	
 	const hash = project.createHash(options.vscode, options.json, platform);
 	let oldHash = null;
@@ -692,7 +695,7 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 	else {
 		log.info('Project did not change.');
 	}
-	
+
 	/*if (langExporter !== null) {
 		trees.forEach((tree, index) => {
 			langExporter.exportWrapper(tree, from, to, options, project.IDLfiles[index]);
