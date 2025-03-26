@@ -674,7 +674,12 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 	}*/
 
 	if (Project.koreDir) {
-		fs.writeFileSync(path.join(to, 'korepath'), path.relative(from, Project.koreDir), 'utf8');
+		try {
+			fs.writeFileSync(path.join(to, 'korepath'), path.relative(from, Project.koreDir), 'utf8');
+		}
+		catch (err) {
+			log.error('Could not write korepath file');
+		}
 	}
 	
 	const hash = project.createHash(options.vscode, options.json, platform);
