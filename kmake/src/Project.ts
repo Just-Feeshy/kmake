@@ -240,6 +240,21 @@ export class Project {
 	kope: boolean = false;
 	executableName: string;
 
+	createHash(vscode: boolean, json: boolean, platform: string): string {
+		const sha = crypto.createHash('sha1');
+
+		const uuid = this.uuid;
+		this.uuid = '';
+		sha.update(JSON.stringify(this));
+		this.uuid = uuid;
+
+		sha.update(vscode ? 'true' : 'false');
+		sha.update(json ? 'true' : 'false');
+		sha.update(platform);
+		
+		return sha.digest('hex');
+	}
+
 	constructor(name: string) {
 		this.name = name;
 		this.parent = Project.currentParent;

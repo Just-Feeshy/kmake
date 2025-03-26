@@ -673,9 +673,26 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 		throw 'No exporter found for platform ' + platform + '.';
 	}*/
 
-	if (exporter !== null) {
-		await exporter.exportSolution(project, from, to, platform, options.vrApi, options);
+	
+	const hash = project.createHash(options.vscode, options.json, platform);
+	let oldHash = null;
+	try {
+		oldHash = fs.readFileSync(path.join(to, 'project.hash'), {encoding: 'utf8'});
 	}
+	catch (err) {}
+
+	if (hash !== oldHash) {
+		log.info('Project changed, writing project files.');
+		fs.writeFileSync(path.join(to, 'project.hash'), hash, 'utf8');
+
+		if (exporter !== null) {
+			await exporter.exportSolution(project, from, to, platform, options.vrApi, options);
+		}
+	}
+	else {
+		log.info('Project did not change.');
+	}
+	
 	/*if (langExporter !== null) {
 		trees.forEach((tree, index) => {
 			langExporter.exportWrapper(tree, from, to, options, project.IDLfiles[index]);
