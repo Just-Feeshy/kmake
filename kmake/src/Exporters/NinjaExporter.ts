@@ -172,7 +172,7 @@ export class NinjaExporter extends Exporter {
 			executableName = project.getExecutableName();
 		}
 
-		let outputname = executableName + this.outputExtension;
+		let outputname = this.outputExtension === '.html' ? 'index.html' : executableName + this.outputExtension;
 
 		this.p('build ' + outputname + ': link ' + ofilelist);
 

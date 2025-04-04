@@ -26,12 +26,12 @@ export class EmscriptenExporter extends Exporter {
 			linkerFlags += ' -pthread';
 		}
 
-		linkerFlags += ' -s TOTAL_MEMORY=134217728 ';
+		linkerFlags += ' -sTOTAL_MEMORY=134217728 ';
 		if (Options.graphicsApi === GraphicsApi.WebGPU) {
-			linkerFlags += '-s USE_WEBGPU=1 ';
+			linkerFlags += '-sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME ';
 		}
 
-		linkerFlags += ' -o index.html --preload-file ' + this.debugDirName(project);
+		linkerFlags += ' --preload-file ' + this.debugDirName(project);
 
 		this.make = new MakeExporter(options, 'emcc', 'emcc', '', '', linkerFlags, '.html', this.libsLine);
 		this.ninja = new NinjaExporter(options, 'emcc', 'emcc', '', '', linkerFlags, '.html', this.libsLine);

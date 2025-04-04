@@ -152,9 +152,10 @@ export class MakeExporter extends Exporter {
 			executableName = project.getExecutableName();
 		}
 
-		this.p(executableName + this.outputExtension + ': ' + gchfilelist + ofilelist);
+		let outputname = this.outputExtension === '.html' ? 'index.html' : executableName + this.outputExtension;
+		this.p(outputname + ': ' + gchfilelist + ofilelist);
 
-		let output = '-o "' + executableName + this.outputExtension + '"';
+		let output = '-o "' + outputname + '"';
 		if (options.dynlib) {
 			output = '-shared -o "' + executableName + '.so"';
 		}
