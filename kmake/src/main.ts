@@ -1027,7 +1027,7 @@ export async function run(options: any, loglog: any): Promise<string> {
 			make = child_process.spawn('make', [], { cwd: path.join(options.to, options.buildPath) });
 		}
 		else if (isPlatform(options, Platform.OSX) || isPlatform(options, Platform.iOS) || isPlatform(options, Platform.tvOS)) {
-			let xcodeOptions = ['-configuration', options.debug ? 'Debug' : 'Release', '-project', solutionName + '.xcodeproj'];
+			let xcodeOptions = ['-configuration', options.debug ? 'Debug' : 'Release', '-project', solutionName + '.xcodeproj', '-quiet'];
 			if (options.nosigning) {
 				xcodeOptions.push('CODE_SIGN_IDENTITY=""');
 				xcodeOptions.push('CODE_SIGNING_REQUIRED=NO');
