@@ -240,7 +240,7 @@ export class Project {
 	kope: boolean = false;
 	executableName: string;
 
-	createHash(vscode: boolean, json: boolean, platform: string): string {
+	createHash(vscode: boolean, json: boolean, debug: boolean, platform: string): string {
 		const sha = crypto.createHash('sha1');
 
 		const uuid = this.uuid;
@@ -250,6 +250,7 @@ export class Project {
 
 		sha.update(vscode ? 'true' : 'false');
 		sha.update(json ? 'true' : 'false');
+		sha.update(debug ? 'true' : 'false');
 		sha.update(platform);
 		
 		return sha.digest('hex');

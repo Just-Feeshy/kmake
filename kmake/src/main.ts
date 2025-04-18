@@ -682,7 +682,7 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 		}
 	}
 	
-	const hash = project.createHash(options.vscode, options.json, platform);
+	const hash = project.createHash(options.vscode, options.json, options.debug, platform);
 	let oldHash = null;
 	try {
 		oldHash = fs.readFileSync(path.join(to, 'projecthash'), {encoding: 'utf8'});
