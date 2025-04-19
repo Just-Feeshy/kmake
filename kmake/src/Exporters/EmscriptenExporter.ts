@@ -34,8 +34,10 @@ export class EmscriptenExporter extends Exporter {
 
 		linkerFlags += ' --preload-file ' + this.debugDirName(project);
 
-		this.make = new MakeExporter(options, 'emcc', 'emcc', '', '', linkerFlags, '.html', this.libsLine);
-		this.ninja = new NinjaExporter(options, 'emcc', 'emcc', '', '', linkerFlags, '.html', this.libsLine);
+		const emcc = (process.platform === 'win32') ? 'emcc.bat' : 'emcc';
+
+		this.make = new MakeExporter(options, emcc, emcc, '', '', linkerFlags, '.html', this.libsLine);
+		this.ninja = new NinjaExporter(options, emcc, emcc, '', '', linkerFlags, '.html', this.libsLine);
 	}
 
 	libsLine(project: Project): string {
