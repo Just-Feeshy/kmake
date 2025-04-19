@@ -88,6 +88,6 @@ export class EmscriptenExporter extends Exporter {
 		this.ninja.exportSolution(project, from, to, platform, vrApi, options);
 		this.compileCommands.exportSolution(project, from, to, platform, vrApi, options);
 
-		await Icon.exportIco(project.icon, path.resolve(to, 'favicon.ico'), from, true);
+		await Icon.exportIco(project.icon, path.resolve(outputPath, 'favicon.ico'), from, true);
 	}
 }
