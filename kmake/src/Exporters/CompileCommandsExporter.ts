@@ -120,7 +120,8 @@ export class CompilerCommandsExporter extends Exporter {
 			}
 		}
 		else if (platform === Platform.Emscripten) {
-			let emcc = child_process.spawnSync('emcc', ['--cflags']);
+			const emcc_bin = (process.platform === 'win32') ? 'emcc.bat' : 'emcc';
+			let emcc = child_process.spawnSync(emcc_bin, ['--cflags']);
 			// log.info(emcc.status);
 			if (emcc.status === 0) {
 				let flags = emcc.output.toString().split(' ');
