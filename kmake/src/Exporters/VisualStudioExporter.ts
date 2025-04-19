@@ -267,7 +267,7 @@ export class VisualStudioExporter extends Exporter {
 		}
 		else if (platform === Platform.Windows) {
 			this.exportResourceScript(to);
-			await Icon.exportIco(project.icon, path.resolve(to, 'icon.ico'), from);
+			await Icon.exportIco(project.icon, path.resolve(to, 'icon.ico'), from, false);
 		}
 		else {
 			await this.additionalFiles(Icon, from, to, project, platform);

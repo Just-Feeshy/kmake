@@ -4,13 +4,14 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
-function run(from: string, to: string, width: number, height: number, format: string, background: number, callback: any) {
+function run(from: string, to: string, width: number, height: number, format: string, background: number, small: boolean, callback: any) {
 	const exe = path.resolve(__dirname, 'kraffiti' + exec.sys());
 
 	let params = ['from=' + from, 'to=' + to, 'format=' + format, 'keepaspect'];
 	if (width > 0) params.push('width=' + width);
 	if (height > 0) params.push('height=' + height);
 	if (background !== undefined) params.push('background=' + background.toString(16));
+	if (small) params.push('small');
 	let child = cp.spawn(exe, params);
 
 	child.stdout.on('data', (data: any) => {
@@ -37,32 +38,32 @@ function findIcon(icon: string, from: string) {
 	else return path.join(__dirname, 'icon.png');
 }
 
-export async function exportIco(icon: string, to: string, from: string) {
+export async function exportIco(icon: string, to: string, from: string, small: boolean) {
 	return new Promise(resolve => {
-		run(findIcon(icon, from.toString()), to.toString(), 0, 0, 'ico', undefined, resolve);
+		run(findIcon(icon, from.toString()), to.toString(), 0, 0, 'ico', undefined, small, resolve);
 	});
 }
 
 export async function exportIcns(icon: string, to: string, from: string) {
 	return new Promise(resolve => {
-		run(findIcon(icon, from.toString()), to.toString(), 0, 0, 'icns', undefined, resolve);
+		run(findIcon(icon, from.toString()), to.toString(), 0, 0, 'icns', undefined, false, resolve);
 	});
 }
 
 export async function exportPng(icon: string, to: string, width: number, height: number, background: number, from: string) {
 	return new Promise(resolve => {
-		run(findIcon(icon, from.toString()), to.toString(), width, height, 'png', background, resolve);
+		run(findIcon(icon, from.toString()), to.toString(), width, height, 'png', background, false, resolve);
 	});
 }
 
 export async function exportPng24(icon: string, to: string, width: number, height: number, background: number, from: string) {
 	return new Promise(resolve => {
-		run(findIcon(icon, from.toString()), to.toString(), width, height, 'png24', background, resolve);
+		run(findIcon(icon, from.toString()), to.toString(), width, height, 'png24', background, false, resolve);
 	});
 }
 
 export async function exportBmp(icon: string, to: string, width: number, height: number, background: number, from: string) {
 	return new Promise(resolve => {
-		run(findIcon(icon, from.toString()), to.toString(), width, height, 'bmp', background, resolve);
+		run(findIcon(icon, from.toString()), to.toString(), width, height, 'bmp', background, false, resolve);
 	});
 }

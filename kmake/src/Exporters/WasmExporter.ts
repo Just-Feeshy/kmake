@@ -3,6 +3,8 @@ import { Project } from 'kmake/Project';
 import { CompilerCommandsExporter } from 'kmake/Exporters/CompileCommandsExporter';
 import { MakeExporter } from 'kmake/Exporters/MakeExporter';
 import { NinjaExporter } from 'kmake/Exporters/NinjaExporter';
+import * as Icon from 'kmake/Icon';
+import * as path from 'path';
 
 export class WasmExporter extends Exporter {
 	compileCommands: CompilerCommandsExporter;
@@ -22,5 +24,7 @@ export class WasmExporter extends Exporter {
 		this.make.exportSolution(project, from, to, platform, vrApi, options);
 		this.ninja.exportSolution(project, from, to, platform, vrApi, options);
 		this.compileCommands.exportSolution(project, from, to, platform, vrApi, options);
+
+		await Icon.exportIco(project.icon, path.resolve(to, 'favicon.ico'), from, true);
 	}
 }

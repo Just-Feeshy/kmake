@@ -7,6 +7,7 @@ import * as path from 'path';
 import { CompilerCommandsExporter } from 'kmake/Exporters/CompileCommandsExporter';
 import { MakeExporter } from 'kmake/Exporters/MakeExporter';
 import { NinjaExporter } from 'kmake/Exporters/NinjaExporter';
+import * as Icon from 'kmake/Icon';
 
 export class EmscriptenExporter extends Exporter {
 	compileCommands: CompilerCommandsExporter;
@@ -84,5 +85,7 @@ export class EmscriptenExporter extends Exporter {
 		this.make.exportSolution(project, from, to, platform, vrApi, options);
 		this.ninja.exportSolution(project, from, to, platform, vrApi, options);
 		this.compileCommands.exportSolution(project, from, to, platform, vrApi, options);
+
+		await Icon.exportIco(project.icon, path.resolve(to, 'favicon.ico'), from, true);
 	}
 }
