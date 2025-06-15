@@ -223,6 +223,7 @@ export class Project {
 	cmdArgs: string[] = [];
 	cFlags: string[] = [];
 	cppFlags: string[] = [];
+	linkerFlags: string[] = [];
 	stackSize: number;
 	icon: string = null;
 	livePP: string = null;
@@ -479,6 +480,11 @@ export class Project {
 						this.cppFlags.push(flag);
 					}
 				}
+				for (let flag of sub.linkerFlags) {
+					if (!this.linkerFlags.includes(flag)) {
+						this.linkerFlags.push(flag);
+					}
+				}
 			}
 
 		}
@@ -534,6 +540,18 @@ export class Project {
 		for (let i = 0; i < arguments.length; ++i) {
 			if (typeof arguments[i] === 'string') {
 				this.addCppFlag(arguments[i]);
+			}
+		}
+	}
+
+	addLinkerFlag(flag: string) {
+		this.linkerFlags.push(flag);
+	}
+
+	addLinkerFlags() {
+		for (let i = 0; i < arguments.length; ++i) {
+			if (typeof arguments[i] === 'string') {
+				this.addLinkerFlag(arguments[i]);
 			}
 		}
 	}

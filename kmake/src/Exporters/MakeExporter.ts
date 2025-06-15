@@ -97,7 +97,14 @@ export class MakeExporter extends Exporter {
 		}
 		this.p('INC=' + incline);
 
-		this.p('LIB=' + this.linkerFlags + this.libsLine(project));
+		let linkerline = this.linkerFlags;
+		linkerline += this.libsLine(project);
+		linkerline += ' ';
+		for (let flag of project.linkerFlags) {
+			linkerline += flag + ' ';
+		}
+
+		this.p('LIB=' + linkerline);
 
 		let defline = '';
 		for (const def of project.getDefines()) {

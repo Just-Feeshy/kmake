@@ -23,47 +23,13 @@ export class EmscriptenExporter extends Exporter {
 			linkerFlags += ' -pthread';
 		}
 
-		if (project.targetOptions.emscripten.threads) {
-			linkerFlags += ' -pthread';
-		}
-
 		linkerFlags += ' -sTOTAL_MEMORY=134217728 ';
-		if (Options.graphicsApi === GraphicsApi.WebGPU) {
-			linkerFlags += '-sUSE_WEBGPU=1 -sASYNCIFY -sEXIT_RUNTIME ';
-		}
-
 		linkerFlags += ' --preload-file ' + this.debugDirName(project);
 
 		const emcc = (process.platform === 'win32') ? 'emcc.bat' : 'emcc';
 
-		this.make = new MakeExporter(options, emcc, emcc, '', '', linkerFlags, '.html', this.libsLine);
-		this.ninja = new NinjaExporter(options, emcc, emcc, '', '', linkerFlags, '.html', this.libsLine);
-	}
-
-	libsLine(project: Project): string {
-		let libs = '';
-		for (let lib of project.getLibs()) {
-			if (lib.startsWith('USE_')) {
-				libs += ' -s' + lib;
-			}
-			else {
-				libs += ' -l' + lib;
-			}
-		}
-		return libs;
-	}
-
-	libsNinjaLine(project: Project): string {
-		let libs = '';
-		for (let lib of project.getLibs()) {
-			if (lib.startsWith('USE_')) {
-				libs += ' -s' + lib;
-			}
-			else {
-				libs += ' -l' + lib;
-			}
-		}
-		return libs;
+		this.make = new MakeExporter(options, emcc, emcc, '', '', linkerFlags, '.html');
+		this.ninja = new NinjaExporter(options, emcc, emcc, '', '', linkerFlags, '.html');
 	}
 
 	debugDirName(project: Project): string {

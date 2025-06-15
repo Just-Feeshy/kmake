@@ -77,9 +77,12 @@ export class NinjaExporter extends Exporter {
 			incline += '-I' + inc + ' ';
 		}
 
-		let libsline = this.linkerFlags;
-		libsline += this.libsLine(project);
-		libsline += ' ';
+		let linkerline = this.linkerFlags;
+		linkerline += this.libsLine(project);
+		linkerline += ' ';
+		for (let flag of project.linkerFlags) {
+			linkerline += flag + ' ';
+		}
 
 		let defline = '';
 		for (const def of project.getDefines()) {
@@ -134,13 +137,13 @@ export class NinjaExporter extends Exporter {
 		this.p('rule cxx\n  deps = gcc\n  depfile = $out.d\n  command = ' + cppline + '-MD -MF $out.d -c $in -o $out\n');
 
 		if (options.dynlib) {
-			this.p('rule link\n  pool = link_pool\n  command = ' + this.cppCompiler + ' -fPIC -shared -o $out ' + optimization + ' $in ' + libsline);
+			this.p('rule link\n  pool = link_pool\n  command = ' + this.cppCompiler + ' -fPIC -shared -o $out ' + optimization + ' $in ' + linkerline);
 		}
 		else if (options.lib) {
 			this.p('rule link\n  pool = link_pool\n  command = ar rcs -o $out $in');
 		}
 		else {
-			this.p('rule link\n  pool = link_pool\n  command = ' + this.cppCompiler + ' -o $out ' + optimization + ' $in ' + libsline);
+			this.p('rule link\n  pool = link_pool\n  command = ' + this.cppCompiler + ' -o $out ' + optimization + ' $in ' + linkerline);
 		}
 
 		for (let fileobject of project.getFiles()) {
