@@ -726,7 +726,7 @@ static ExitCode ProcessGlobalArgsInternal(std::vector<std::string>* args,
                                           std::vector<std::string>* exec_args,
                                           std::vector<std::string>* errors,
                                           OptionEnvvarSettings settings) {
-  return 0;
+  return ExitCode::kNoFailure;
   
   // Parse a few arguments which are specific to Node.
   std::vector<std::string> v8_args;
