@@ -177,8 +177,8 @@ jobs:
         export PATH=$PATH:/home/runner/work/armv7l-linux-musleabihf-cross/bin
         cd /home/runner/work/kmake/kmake
         mkdir install
-        ./configure --prefix=install --dest-cpu=arm --cross-compiling --dest-os=linux --openssl-no-asm --without-intl --fully-static --with-arm-fpu=vfpv3 --use_clang
-        make -j$(nproc) ASFLAGS="-mcpu=cortex-a53 -mfpu=neon-vfpv3 -mfloat-abi=hard" CFLAGS="-mcpu=cortex-a53 -mfpu=neon-vfpv3 -mfloat-abi=hard" CXXFLAGS="-mcpu=cortex-a53 -mfpu=neon-vfpv3 -mfloat-abi=hard"
+        ./configure --prefix=install --dest-cpu=arm --cross-compiling --dest-os=linux --openssl-no-asm --without-intl --fully-static --use_clang
+        make -j$(nproc)
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_arm
