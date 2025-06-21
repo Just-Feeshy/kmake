@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2020, Intel Corporation. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -220,6 +220,12 @@ int ossl_rsaz_mod_exp_avx512_x2(BN_ULONG *res1,
     from_words52(res1, factor_size, rr1_red);
     from_words52(res2, factor_size, rr2_red);
 
+    /* bn_reduce_once_in_place expects number of BN_ULONG, not bit size */
+    factor_size /= sizeof(BN_ULONG) * 8;
+
+    bn_reduce_once_in_place(res1, /*carry=*/0, m1, storage, factor_size);
+    bn_reduce_once_in_place(res2, /*carry=*/0, m2, storage, factor_size);
+
     ret = 1;
 err:
     if (storage != NULL) {
@@ -318,6 +324,8 @@ static void RSAZ_exp52x20_x2_256(BN_ULONG *out,          /* [2][20] */
         int exp_chunk_no = exp_bit_no / 64;
         int exp_chunk_shift = exp_bit_no % 64;
 
+        BN_ULONG red_table_idx_0, red_table_idx_1;
+
         /*
          * If rem == 0, then
          *      exp_bit_no = modulus_bitsize - exp_win_size
@@ -329,8 +337,8 @@ static void RSAZ_exp52x20_x2_256(BN_ULONG *out,          /* [2][20] */
         OPENSSL_assert(rem != 0);
 
         /* Process 1-st exp window - just init result */
-        BN_ULONG red_table_idx_0 = expz[0][exp_chunk_no];
-        BN_ULONG red_table_idx_1 = expz[1][exp_chunk_no];
+        red_table_idx_0 = expz[0][exp_chunk_no];
+        red_table_idx_1 = expz[1][exp_chunk_no];
         /*
          * The function operates with fixed moduli sizes divisible by 64,
          * thus table index here is always in supported range [0, EXP_WIN_SIZE).
@@ -460,9 +468,13 @@ static void to_words52(BN_ULONG *out, int out_len,
     in_str = (uint8_t *)in;
 
     for (; in_bitsize >= (2 * DIGIT_SIZE); in_bitsize -= (2 * DIGIT_SIZE), out += 2) {
-        out[0] = (*(uint64_t *)in_str) & DIGIT_MASK;
+        uint64_t digit;
+
+        memcpy(&digit, in_str, sizeof(digit));
+        out[0] = digit & DIGIT_MASK;
         in_str += 6;
-        out[1] = ((*(uint64_t *)in_str) >> 4) & DIGIT_MASK;
+        memcpy(&digit, in_str, sizeof(digit));
+        out[1] = (digit >> 4) & DIGIT_MASK;
         in_str += 7;
         out_len -= 2;
     }
@@ -483,11 +495,7 @@ static void to_words52(BN_ULONG *out, int out_len,
         out_len--;
     }
 
-    while (out_len > 0) {
-        *out = 0;
-        out_len--;
-        out++;
-    }
+    memset(out, 0, out_len * sizeof(BN_ULONG));
 }
 
 static ossl_inline void put_digit52(uint8_t *pStr, int strLen, uint64_t digit)
@@ -518,10 +526,15 @@ static void from_words52(BN_ULONG *out, int out_bitsize, const BN_ULONG *in)
     {
         uint8_t *out_str = (uint8_t *)out;
 
-        for (; out_bitsize >= (2 * DIGIT_SIZE); out_bitsize -= (2 * DIGIT_SIZE), in += 2) {
-            (*(uint64_t *)out_str) = in[0];
+        for (; out_bitsize >= (2 * DIGIT_SIZE);
+               out_bitsize -= (2 * DIGIT_SIZE), in += 2) {
+            uint64_t digit;
+
+            digit = in[0];
+            memcpy(out_str, &digit, sizeof(digit));
             out_str += 6;
-            (*(uint64_t *)out_str) ^= in[1] << 4;
+            digit = digit >> 48 | in[1] << 4;
+            memcpy(out_str, &digit, sizeof(digit));
             out_str += 7;
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -11,7 +11,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "e_os.h" /* strcasecmp and struct stat */
+#include "e_os.h" /* struct stat */
 #ifdef __TANDEM
 # include <sys/types.h> /* needed for stat.h */
 # include <sys/stat.h> /* struct stat */
@@ -192,11 +192,11 @@ static int def_load(CONF *conf, const char *name, long *line)
 /* Parse a boolean value and fill in *flag. Return 0 on error. */
 static int parsebool(const char *pval, int *flag)
 {
-    if (strcasecmp(pval, "on") == 0
-            || strcasecmp(pval, "true") == 0) {
+    if (OPENSSL_strcasecmp(pval, "on") == 0
+            || OPENSSL_strcasecmp(pval, "true") == 0) {
         *flag = 1;
-    } else if (strcasecmp(pval, "off") == 0
-            || strcasecmp(pval, "false") == 0) {
+    } else if (OPENSSL_strcasecmp(pval, "off") == 0
+            || OPENSSL_strcasecmp(pval, "false") == 0) {
         *flag = 0;
     } else {
         ERR_raise(ERR_LIB_CONF, CONF_R_INVALID_PRAGMA);
@@ -225,6 +225,9 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
 #ifndef OPENSSL_NO_POSIX_IO
     char *dirpath = NULL;
     OPENSSL_DIR_CTX *dirctx = NULL;
+#endif
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    int numincludes = 0;
 #endif
 
     if ((buff = BUF_MEM_new()) == NULL) {
@@ -329,7 +332,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
 
         v = NULL;
         /* check for line continuation */
-        if (bufnum >= 1) {
+        if (!again && bufnum >= 1) {
             /*
              * If we have bytes and the last char '\\' and second last char
              * is not '\\'
@@ -441,6 +444,20 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
                 BIO *next;
                 const char *include_dir = ossl_safe_getenv("OPENSSL_CONF_INCLUDE");
                 char *include_path = NULL;
+
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+                /*
+                 * The include processing below can cause the "conf" fuzzer to
+                 * timeout due to the fuzzer inserting large and complicated
+                 * includes - with a large amount of time spent in
+                 * OPENSSL_strlcat/OPENSSL_strcpy. This is not a security
+                 * concern because config files should never come from untrusted
+                 * sources. We just set an arbitrary limit on the allowed
+                 * number of includes when fuzzing to prevent this timeout.
+                 */
+                if (numincludes++ > 10)
+                    goto err;
+#endif
 
                 if (include_dir == NULL)
                     include_dir = conf->includedir;
@@ -839,8 +856,10 @@ static BIO *get_next_file(const char *path, OPENSSL_DIR_CTX **dirctx)
         namelen = strlen(filename);
 
 
-        if ((namelen > 5 && strcasecmp(filename + namelen - 5, ".conf") == 0)
-            || (namelen > 4 && strcasecmp(filename + namelen - 4, ".cnf") == 0)) {
+        if ((namelen > 5
+             && OPENSSL_strcasecmp(filename + namelen - 5, ".conf") == 0)
+             || (namelen > 4
+                 && OPENSSL_strcasecmp(filename + namelen - 4, ".cnf") == 0)) {
             size_t newlen;
             char *newpath;
             BIO *bio;

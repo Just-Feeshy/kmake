@@ -3,6 +3,10 @@
 const child_process = require('child_process');
 const http_benchmarkers = require('./_http-benchmarkers.js');
 
+function allow() {
+  return true;
+}
+
 class Benchmark {
   constructor(fn, configs, options = {}) {
     // Used to make sure a benchmark only start a timer once
@@ -18,27 +22,44 @@ class Benchmark {
     this.name = require.main.filename.slice(__dirname.length + 1);
 
     // Execution arguments i.e. flags used to run the jobs
-    this.flags = process.env.NODE_BENCHMARK_FLAGS ?
-      process.env.NODE_BENCHMARK_FLAGS.split(/\s+/) :
-      [];
+    this.flags = process.env.NODE_BENCHMARK_FLAGS?.split(/\s+/) ?? [];
 
     // Parse job-specific configuration from the command line arguments
     const argv = process.argv.slice(2);
     const parsed_args = this._parseArgs(argv, configs, options);
+
     this.options = parsed_args.cli;
     this.extra_options = parsed_args.extra;
+    this.combinationFilter = typeof options.combinationFilter === 'function' ? options.combinationFilter : allow;
+
+    if (options.byGroups) {
+      this.queue = [];
+      const groupNames = process.env.NODE_RUN_BENCHMARK_GROUPS?.split(',') ?? Object.keys(configs);
+
+      for (const groupName of groupNames) {
+        const config = { ...configs[groupName][0], group: groupName };
+        const parsed_args = this._parseArgs(argv, config, options);
+
+        this.options = parsed_args.cli;
+        this.extra_options = parsed_args.extra;
+        this.queue = this.queue.concat(this._queue(this.options));
+      }
+    } else {
+      this.queue = this._queue(this.options);
+    }
+
     if (options.flags) {
       this.flags = this.flags.concat(options.flags);
     }
 
-    // The configuration list as a queue of jobs
-    this.queue = this._queue(this.options);
+    if (this.queue.length === 0)
+      return;
 
     // The configuration of the current job, head of the queue
     this.config = this.queue[0];
 
     process.nextTick(() => {
-      if (Object.hasOwn(process.env, 'NODE_RUN_BENCHMARK_FN')) {
+      if (process.env.NODE_RUN_BENCHMARK_FN !== undefined) {
         fn(this.config);
       } else {
         // _run will use fork() to create a new process for each configuration
@@ -91,12 +112,11 @@ class Benchmark {
         process.exit(1);
       }
       const [, key, value] = match;
-      if (Object.hasOwn(configs, key)) {
-        if (!cliOptions[key])
-          cliOptions[key] = [];
+      if (configs[key] !== undefined) {
+        cliOptions[key] ||= [];
         cliOptions[key].push(
           // Infer the type from the config object and parse accordingly
-          typeof configs[key][0] === 'number' ? +value : value
+          typeof configs[key][0] === 'number' ? +value : value,
         );
       } else {
         extraOptions[key] = value;
@@ -108,6 +128,7 @@ class Benchmark {
   _queue(options) {
     const queue = [];
     const keys = Object.keys(options);
+    const { combinationFilter } = this;
 
     // Perform a depth-first walk through all options to generate a
     // configuration list that contains all combinations.
@@ -131,7 +152,15 @@ class Benchmark {
         if (keyIndex + 1 < keys.length) {
           recursive(keyIndex + 1, currConfig);
         } else {
-          queue.push(currConfig);
+          // Check if we should allow the current combination
+          const allowed = combinationFilter({ ...currConfig });
+          if (typeof allowed !== 'boolean') {
+            throw new TypeError(
+              'Combination filter must always return a boolean',
+            );
+          }
+          if (allowed)
+            queue.push(currConfig);
         }
       }
     }
@@ -147,10 +176,9 @@ class Benchmark {
 
   http(options, cb) {
     const http_options = { ...options };
-    http_options.benchmarker = http_options.benchmarker ||
-                               this.config.benchmarker ||
-                               this.extra_options.benchmarker ||
-                               http_benchmarkers.default_http_benchmarker;
+    http_options.benchmarker ||= this.config.benchmarker ||
+                                 this.extra_options.benchmarker ||
+                                 http_benchmarkers.default_http_benchmarker;
     http_benchmarkers.run(
       http_options, (error, code, used_benchmarker, result, elapsed) => {
         if (cb) {
@@ -162,7 +190,7 @@ class Benchmark {
         }
         this.config.benchmarker = used_benchmarker;
         this.report(result, elapsed);
-      }
+      },
     );
   }
 
@@ -289,7 +317,15 @@ function formatResult(data) {
 function sendResult(data) {
   if (process.send) {
     // If forked, report by process send
-    process.send(data);
+    process.send(data, () => {
+      if (process.env.NODE_RUN_BENCHMARK_FN !== undefined) {
+        // If, for any reason, the process is unable to self close within
+        // a second after completing, forcefully close it.
+        require('timers').setTimeout(() => {
+          process.exit(0);
+        }, 5000).unref();
+      }
+    });
   } else {
     // Otherwise report by stdout
     process.stdout.write(formatResult(data));
@@ -331,8 +367,9 @@ function getUrlData(withBase) {
   for (const item of data) {
     if (item.failure || !item.input) continue;
     if (withBase) {
-      result.push([item.input, item.base]);
-    } else if (item.base !== 'about:blank') {
+      // item.base might be null. It should be converted into `undefined`.
+      result.push([item.input, item.base ?? undefined]);
+    } else if (item.base !== null) {
       result.push(item.base);
     }
   }
@@ -345,7 +382,6 @@ function getUrlData(withBase) {
  * The 'wpt' type contains about 400 data points when `withBase` is true,
  * and 200 data points when `withBase` is false.
  * Other types contain 200 data points with or without base.
- *
  * @param {string} type Type of the data, 'wpt' or a key of `urls`
  * @param {number} e The repetition of the data, as exponent of 2
  * @param {boolean} withBase Whether to include a base URL

@@ -4,7 +4,7 @@
   --black1: #090c15;
   --black2: #2c3437;
   --black3: #0d111d;
-  --blue1: #00f;
+  --blue1: #0a56b2;
   --white: #ffffff;
   --white-smoke: #f2f2f2;
   --grey-smoke: #e9edf0;
@@ -63,6 +63,7 @@
 html {
   font-size: 1rem;
   overflow-wrap: break-word;
+  scroll-padding-top: 4rem;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-variant-ligatures: none;
@@ -121,6 +122,19 @@ a.type {
   font-size: .9em;
 }
 
+.skip-to-content {
+  position: fixed;
+  top: -300%;
+}
+.skip-to-content:focus {
+  display: block;
+  top: 0;
+  left: 0;
+  background-color: var(--green1);
+  padding: 1rem;
+  z-index: 999999;
+}
+
 #content {
   position: relative;
 }
@@ -129,7 +143,6 @@ a:link,
 a:active,
 a:visited {
   color: var(--color-links);
-  text-decoration: none;
   border-radius: 2px;
   padding: 1px 3px;
 }
@@ -162,7 +175,7 @@ em code {
   margin-bottom: 1rem;
 }
 
-#gtoc ul {
+#gtoc > ul {
   list-style: none;
   margin-left: 0;
   line-height: 1.5rem;
@@ -172,42 +185,76 @@ em code {
   color: var(--color-critical);
 }
 
-li.version-picker {
+li.picker-header {
   position: relative;
 }
 
-li.version-picker:hover > a {
+li.picker-header .picker-arrow {
+  display: inline-block;
+  width: .6rem;
+  height: .6rem;
+  border-top: .3rem solid transparent;
+  border-bottom: .3rem solid transparent;
+  border-left: .6rem solid currentColor;
+  border-right: none;
+  margin: 0 .2rem .05rem 0;
+}
+
+li.picker-header.expanded .picker-arrow,
+:root:not(.has-js) li.picker-header:focus-within .picker-arrow,
+:root:not(.has-js) li.picker-header:hover .picker-arrow  {
+  border-top: .6rem solid currentColor;
+  border-bottom: none;
+  border-left: .35rem solid transparent;
+  border-right: .35rem solid transparent;
+  margin-bottom: 0;
+}
+
+li.picker-header.expanded > a,
+:root:not(.has-js) li.picker-header:focus-within > a,
+:root:not(.has-js) li.picker-header:hover > a {
   border-radius: 2px 2px 0 0;
 }
 
-li.version-picker:hover > ol {
+li.picker-header.expanded > .picker, 
+:root:not(.has-js) li.picker-header:focus-within > .picker,
+:root:not(.has-js) li.picker-header:hover > .picker {
   display: block;
-  z-index: 1;
 }
 
-li.version-picker a span {
+li.picker-header a span {
   font-size: .7rem;
 }
 
-ol.version-picker {
+.picker {
   background-color: var(--color-fill-app);
   border: 1px solid var(--color-brand-secondary);
   border-radius: 0 0 2px 2px;
   display: none;
   list-style: none;
   position: absolute;
-  right: 0;
+  left: 0;
   top: 100%;
-  width: 100%;
+  width: max-content;
+  min-width: min(300px, 75vw);
+  max-width: 75vw;
+  max-height: min(600px, 60vh);
+  overflow-y: auto;
 }
 
-#gtoc ol.version-picker li {
+.picker > ul, .picker > ol {
+  list-style: none;
+  margin-left: 0;
+  line-height: 1.5rem;
+}
+
+.picker li {
   display: block;
   border-right: 0;
   margin-right: 0;
 }
 
-ol.version-picker li a {
+.picker li a {
   border-radius: 0;
   display: block;
   margin: 0;
@@ -215,9 +262,19 @@ ol.version-picker li a {
   padding-left: 1rem;
 }
 
-ol.version-picker li:last-child a {
+.picker li a.active,
+.picker li a.active:hover,
+.picker li a.active:focus {
+  font-weight: 700;
+}
+
+.picker li:last-child a {
   border-bottom-right-radius: 1px;
   border-bottom-left-radius: 1px;
+}
+
+.gtoc-picker-header {
+  display: none;
 }
 
 .line {
@@ -226,11 +283,24 @@ ol.version-picker li:last-child a {
   padding-bottom: 1px;
 }
 
+.picker .line {
+  margin: 0;
+  width: 100%;
+}
+
 .api_stability {
   color: var(--white) !important;
   margin: 0 0 1rem;
   padding: 1rem;
   line-height: 1.5;
+
+  position: sticky;
+  top: 3rem;
+  z-index: 1;
+}
+
+#api-section-documentation .api_stability {
+  position: static;
 }
 
 .api_stability * {
@@ -377,9 +447,9 @@ dd + dt.pre {
   padding-top: 1rem;
 }
 
-#apicontent section {
+#api-section-all #apicontent section {
   content-visibility: auto;
-  contain-intrinsic-size: 1px 5000px;
+  contain-intrinsic-size: 1px auto 5000px;
 }
 
 #apicontent .line {
@@ -506,7 +576,31 @@ hr {
   margin-top: .666rem;
 }
 
-#toc .stability_0::after {
+.toc ul {
+  margin: 0;
+}
+.toc>ul:first-child {
+  margin-left: 1rem;
+}
+.toc li {
+  display: list-item;
+  list-style: square;
+}
+.toc li a {
+  display: inline;
+  padding-left: 0;
+}
+
+.toc li a:hover::before {
+  color: var(--white);
+}
+
+.toc ul {
+  padding-left: 1rem;
+}
+
+#toc .stability_0::after,
+.deprecated-inline::after {
   background-color: var(--red2);
   color: var(--white);
   content: "deprecated";
@@ -518,6 +612,15 @@ hr {
   background-color: var(--blue1);
   color: var(--white);
   content: "legacy";
+  margin-left: .25rem;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+.experimental-inline::after {
+  background-color: var(--red3);
+  color: var(--white);
+  content: "experimental";
   margin-left: .25rem;
   padding: 1px 3px;
   border-radius: 3px;
@@ -718,10 +821,53 @@ kbd {
   }
 }
 
+.header {
+  position: sticky;
+  top: -1px;
+  z-index: 10;
+  padding-top: 1rem;
+  background-color: var(--color-fill-app);
+}
+
+@media not screen, (max-width: 600px) {
+  .header {
+    position: relative;
+    top: 0;
+  }
+  .api_stability {
+    top: 0;
+  }
+}
+
+@media not screen, (max-height: 1000px) {
+  :root:not(.has-js) .header {
+    position: relative;
+    top: 0;
+  }
+}
+
+.header .pinned-header {
+  display: none;
+  margin-right: 0.4rem;
+  font-weight: 700;
+}
+
+.header.is-pinned .header-container {
+  display: none;
+}
+
+.header.is-pinned .pinned-header {
+  display: inline;
+}
+
+.header.is-pinned #gtoc {
+  margin: 0;
+}
+
 .header-container {
   display: flex;
   align-items: center;
-  margin: 1.5rem 0 1rem;
+  margin-bottom: 1rem;
   justify-content: space-between;
 }
 
@@ -735,7 +881,7 @@ kbd {
   outline: var(--brand3) dotted 2px;
 }
 
-@media only screen and (min-width: 577px) {
+@media only screen and (min-width: 601px) {
   #gtoc > ul > li {
     display: inline;
     border-right: 1px currentColor solid;
@@ -747,6 +893,18 @@ kbd {
     border-right: none;
     margin-right: 0;
     padding-right: 0;
+  }
+
+  .header #gtoc > ul > li.pinned-header {
+    display: none;
+  }
+
+  .header.is-pinned #gtoc > ul > li.pinned-header {
+    display: inline;
+  }
+
+  #gtoc > ul > li.gtoc-picker-header {
+    display: none;
   }
 }
 
@@ -763,6 +921,10 @@ kbd {
   }
   #column2 {
     display: none;
+  }
+
+  #gtoc > ul > li.gtoc-picker-header {
+    display: inline;
   }
 }
 
@@ -792,7 +954,7 @@ kbd {
   display: block;
 }
 
-.js-flavor-selector {
+.js-flavor-toggle {
   -webkit-appearance: none;
   appearance: none;
   float: right;
@@ -801,19 +963,49 @@ kbd {
   background-repeat: no-repeat;
   width: 142px;
   height: 20px;
+  display: block;
+  cursor: pointer;
+  margin: 0;
 }
-.js-flavor-selector:checked {
+.js-flavor-toggle:checked {
   background-image: url(./js-flavor-esm.svg);
 }
-.js-flavor-selector:not(:checked) ~ .mjs,
-.js-flavor-selector:checked ~ .cjs {
+.js-flavor-toggle:not(:checked) ~ .mjs,
+.js-flavor-toggle:checked ~ .cjs {
   display: none;
 }
-.dark-mode .js-flavor-selector {
+.dark-mode .js-flavor-toggle {
   filter: invert(1);
 }
+
+.copy-button {
+  float: right;
+  
+  outline: none;
+  font-size: 10px;
+  color: #fff;
+  background-color: var(--green1);
+  line-height: 1;
+  border-radius: 500px;
+  border: 1px solid transparent;
+  letter-spacing: 2px;
+  min-width: 7.5rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0 .5rem;
+  margin-right: .2rem;
+  height: 1.5rem;
+  transition-property: background-color,border-color,color,box-shadow,filter;
+  transition-duration: .3s;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  background-color: var(--green2);
+}
+
 @supports (aspect-ratio: 1 / 1) {
-  .js-flavor-selector {
+  .js-flavor-toggle {
     height: 1.5em;
     width: auto;
     aspect-ratio: 2719 / 384;
@@ -870,24 +1062,24 @@ kbd {
   #apicontent {
     overflow: hidden;
   }
-  .js-flavor-selector {
+  .js-flavor-toggle {
     display: none;
   }
-  .js-flavor-selector + * {
+  .js-flavor-toggle + * {
     margin-bottom: 2rem;
     padding-bottom: 2rem;
     border-bottom: 1px solid var(--color-text-primary);
   }
-  .js-flavor-selector ~ * {
+  .js-flavor-toggle ~ * {
     display: block !important;
     background-position: top right;
     background-size: 142px 20px;
     background-repeat: no-repeat;
   }
-  .js-flavor-selector ~ .cjs {
+  .js-flavor-toggle ~ .cjs {
     background-image: url(./js-flavor-cjs.svg);
   }
-  .js-flavor-selector ~ .mjs {
+  .js-flavor-toggle ~ .mjs {
     background-image: url(./js-flavor-esm.svg);
   }
 }

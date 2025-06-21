@@ -7,18 +7,14 @@ prefix pummel
 [true] # This section applies to all platforms
 
 [$system==win32]
-# https://github.com/nodejs/node/issues/40728
-test-fs-watch-non-recursive: PASS,FLAKY
-
-[$system==linux]
-# https://github.com/nodejs/node/issues/38226
-test-crypto-timing-safe-equal-benchmarks: PASS,FLAKY
 
 [$system==macos]
 
 [$arch==arm || $arch==arm64]
 
 [$system==solaris] # Also applies to SmartOS
+# https://github.com/nodejs/node/issues/43457
+test-heapsnapshot-near-heap-limit: PASS,FLAKY
 
 [$system==freebsd]
 

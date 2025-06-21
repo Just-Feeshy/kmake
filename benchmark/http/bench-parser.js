@@ -4,9 +4,9 @@ const common = require('../common');
 
 const bench = common.createBenchmark(main, {
   len: [4, 8, 16, 32],
-  n: [1e5]
+  n: [1e5],
 }, {
-  flags: ['--expose-internals', '--no-warnings']
+  flags: ['--expose-internals', '--no-warnings'],
 });
 
 function main({ len, n }) {
@@ -46,7 +46,7 @@ function main({ len, n }) {
   let header = `GET /hello HTTP/1.1${CRLF}Content-Type: text/plain${CRLF}`;
 
   for (let i = 0; i < len; i++) {
-    header += `X-Filler${i}: ${Math.random().toString(36).substr(2)}${CRLF}`;
+    header += `X-Filler${i}: ${Math.random().toString(36).substring(2)}${CRLF}`;
   }
   header += CRLF;
 

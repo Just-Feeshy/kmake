@@ -83,13 +83,6 @@ public:
      */
     static DateTimePatternGenerator* U_EXPORT2 createInstanceNoStdPat(const Locale& uLocale, UErrorCode& status);
 
-    /**
-     * For ICU use only
-     *
-     * @internal
-     */
-    static DateTimePatternGenerator* U_EXPORT2 internalMakeInstance(const Locale& uLocale, UErrorCode& status);
-
 #endif /* U_HIDE_INTERNAL_API */
 
     /**
@@ -218,11 +211,6 @@ public:
      * @return conflicting status.  The value could be UDATPG_NO_CONFLICT,
      *                             UDATPG_BASE_CONFLICT or UDATPG_CONFLICT.
      * @stable ICU 3.8
-     * <p>
-     * <h4>Sample code</h4>
-     * \snippet samples/dtptngsample/dtptngsample.cpp getBestPatternExample1
-     * \snippet samples/dtptngsample/dtptngsample.cpp addPatternExample
-     * <p>
      */
     UDateTimePatternConflict addPattern(const UnicodeString& pattern,
                                         UBool override,
@@ -311,6 +299,11 @@ public:
      * for those two skeletons, so the result is put together with this pattern,
      * resulting in "d-MMM h:mm".
      *
+     * There are four DateTimeFormats in a DateTimePatternGenerator object,
+     * corresponding to date styles UDAT_FULL..UDAT_SHORT. This method sets
+     * all of them to the specified pattern. To set them individually, see
+     * setDateTimeFormat(UDateFormatStyle style, ...).
+     *
      * @param dateTimeFormat
      *            message format pattern, here {1} will be replaced by the date
      *            pattern and {0} will be replaced by the time pattern.
@@ -320,10 +313,63 @@ public:
 
     /**
      * Getter corresponding to setDateTimeFormat.
+     *
+     * There are four DateTimeFormats in a DateTimePatternGenerator object,
+     * corresponding to date styles UDAT_FULL..UDAT_SHORT. This method gets
+     * the style for UDAT_MEDIUM (the default). To get them individually, see
+     * getDateTimeFormat(UDateFormatStyle style).
+     *
      * @return DateTimeFormat.
      * @stable ICU 3.8
      */
     const UnicodeString& getDateTimeFormat() const;
+
+#if !UCONFIG_NO_FORMATTING
+    /**
+     * dateTimeFormats are message patterns used to compose combinations of date
+     * and time patterns. There are four length styles, corresponding to the
+     * inferred style of the date pattern; these are UDateFormatStyle values:
+     *  - UDAT_FULL (for date pattern with weekday and long month), else
+     *  - UDAT_LONG (for a date pattern with long month), else
+     *  - UDAT_MEDIUM (for a date pattern with abbreviated month), else
+     *  - UDAT_SHORT (for any other date pattern).
+     * For details on dateTimeFormats, see
+     * https://www.unicode.org/reports/tr35/tr35-dates.html#dateTimeFormats.
+     * The default pattern in the root locale for all styles is "{1} {0}".
+     *
+     * @param style
+     *              one of DateFormat.FULL..DateFormat.SHORT. Error if out of range.
+     * @param dateTimeFormat
+     *              the new dateTimeFormat to set for the the specified style
+     * @param status
+     *              in/out parameter; if no failure status is already set,
+     *              it will be set according to result of the function (e.g.
+     *              U_ILLEGAL_ARGUMENT_ERROR for style out of range).
+     * @stable ICU 71
+     */
+    void setDateTimeFormat(UDateFormatStyle style, const UnicodeString& dateTimeFormat,
+                            UErrorCode& status);
+
+    /**
+     * Getter corresponding to setDateTimeFormat.
+     *
+     * @param style
+     *              one of UDAT_FULL..UDAT_SHORT. Error if out of range.
+     * @param status
+     *              in/out parameter; if no failure status is already set,
+     *              it will be set according to result of the function (e.g.
+     *              U_ILLEGAL_ARGUMENT_ERROR for style out of range).
+     * @return
+     *              the current dateTimeFormat for the the specified style, or
+     *              empty string in case of error. The UnicodeString reference,
+     *              or the contents of the string, may no longer be valid if
+     *              setDateTimeFormat is called, or the DateTimePatternGenerator
+     *              object is deleted.
+     * @stable ICU 71
+     */
+    const UnicodeString& getDateTimeFormat(UDateFormatStyle style,
+                            UErrorCode& status) const;
+#endif /* #if !UCONFIG_NO_FORMATTING */
 
     /**
      * Return the best pattern matching the input skeleton. It is guaranteed to
@@ -337,11 +383,6 @@ public:
      * @return bestPattern
      *            The best pattern found from the given skeleton.
      * @stable ICU 3.8
-     * <p>
-     * <h4>Sample code</h4>
-     * \snippet samples/dtptngsample/dtptngsample.cpp getBestPatternExample1
-     * \snippet samples/dtptngsample/dtptngsample.cpp getBestPatternExample
-     * <p>
      */
      UnicodeString getBestPattern(const UnicodeString& skeleton, UErrorCode& status);
 
@@ -385,11 +426,6 @@ public:
      *               which must not indicate a failure before the function call.
      * @return pattern adjusted to match the skeleton fields widths and subtypes.
      * @stable ICU 3.8
-     * <p>
-     * <h4>Sample code</h4>
-     * \snippet samples/dtptngsample/dtptngsample.cpp getBestPatternExample1
-     * \snippet samples/dtptngsample/dtptngsample.cpp replaceFieldTypesExample
-     * <p>
      */
      UnicodeString replaceFieldTypes(const UnicodeString& pattern,
                                      const UnicodeString& skeleton,
@@ -520,7 +556,7 @@ public:
      *
      * @stable ICU 3.8
      */
-    static UClassID U_EXPORT2 getStaticClassID(void);
+    static UClassID U_EXPORT2 getStaticClassID();
 
 private:
     /**
@@ -545,8 +581,7 @@ private:
      */
     DateTimePatternGenerator& operator=(const DateTimePatternGenerator& other);
 
-    // TODO(ticket:13619): re-enable when UDATPG_NARROW no longer in  draft mode.
-    // static const int32_t UDATPG_WIDTH_COUNT = UDATPG_NARROW + 1;
+    static const int32_t UDATPG_WIDTH_COUNT = UDATPG_NARROW + 1;
 
     Locale pLocale;  // pattern locale
     FormatParser *fp;
@@ -554,9 +589,8 @@ private:
     DistanceInfo *distanceInfo;
     PatternMap *patternMap;
     UnicodeString appendItemFormats[UDATPG_FIELD_COUNT];
-    // TODO(ticket:13619): [3] -> UDATPG_WIDTH_COUNT
-    UnicodeString fieldDisplayNames[UDATPG_FIELD_COUNT][3];
-    UnicodeString dateTimeFormat;
+    UnicodeString fieldDisplayNames[UDATPG_FIELD_COUNT][UDATPG_WIDTH_COUNT];
+    UnicodeString dateTimeFormat[4];
     UnicodeString decimal;
     DateTimeMatcher *skipMatcher;
     Hashtable *fAvailableFormatKeyHash;
@@ -596,7 +630,7 @@ private:
     UnicodeString& getMutableFieldDisplayName(UDateTimePatternField field, UDateTimePGDisplayWidth width);
     void getAppendName(UDateTimePatternField field, UnicodeString& value);
     UnicodeString mapSkeletonMetacharacters(const UnicodeString& patternForm, int32_t* flags, UErrorCode& status);
-    const UnicodeString* getBestRaw(DateTimeMatcher& source, int32_t includeMask, DistanceInfo* missingFields, UErrorCode& status, const PtnSkeleton** specifiedSkeletonPtr = 0);
+    const UnicodeString* getBestRaw(DateTimeMatcher& source, int32_t includeMask, DistanceInfo* missingFields, UErrorCode& status, const PtnSkeleton** specifiedSkeletonPtr = nullptr);
     UnicodeString adjustFieldTypes(const UnicodeString& pattern, const PtnSkeleton* specifiedSkeleton, int32_t flags, UDateTimePatternMatchOptions options = UDATPG_MATCH_NO_OPTIONS);
     UnicodeString getBestAppending(int32_t missingFields, int32_t flags, UErrorCode& status, UDateTimePatternMatchOptions options = UDATPG_MATCH_NO_OPTIONS);
     int32_t getTopBitNumber(int32_t foundMask) const;
@@ -607,9 +641,9 @@ private:
     static void U_CALLCONV loadAllowedHourFormatsData(UErrorCode &status);
     void getAllowedHourFormats(const Locale &locale, UErrorCode &status);
 
-    struct AppendItemFormatsSink;
-    struct AppendItemNamesSink;
-    struct AvailableFormatsSink;
+    struct U_HIDDEN AppendItemFormatsSink;
+    struct U_HIDDEN AppendItemNamesSink;
+    struct U_HIDDEN AvailableFormatsSink;
 } ;// end class DateTimePatternGenerator
 
 U_NAMESPACE_END

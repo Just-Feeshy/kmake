@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2014 the V8 project authors. All rights reserved.
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -26,10 +26,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# for py2/py3 compatibility
-from __future__ import print_function
-
-import argparse
 from collections import OrderedDict
 import sys
 
@@ -146,8 +142,6 @@ class CreateCommitMessage(Step):
       # TODO(machenbach): Use proper gerrit footer for bug after switch to
       # gerrit. Keep BUG= for now for backwards-compatibility.
       msg_pieces.append("BUG=%s\n" % bug_aggregate)
-
-    msg_pieces.append("NOTRY=true\nNOPRESUBMIT=true\nNOTREECHECKS=true\n")
 
     self["new_commit_msg"] = "".join(msg_pieces)
 

@@ -1,6 +1,17 @@
 // Step 1.
 test(function() {
     assert_throws_dom("TypeMismatchError", function() {
+        self.crypto.getRandomValues(new Float16Array(6))
+    }, "Float16Array")
+
+    assert_throws_dom("TypeMismatchError", function() {
+        const len = 65536 / Float16Array.BYTES_PER_ELEMENT + 1;
+        self.crypto.getRandomValues(new Float16Array(len));
+    }, "Float16Array (too long)")
+}, "Float16 arrays");
+
+test(function() {
+    assert_throws_dom("TypeMismatchError", function() {
         self.crypto.getRandomValues(new Float32Array(6))
     }, "Float32Array")
     assert_throws_dom("TypeMismatchError", function() {
@@ -8,12 +19,24 @@ test(function() {
     }, "Float64Array")
 
     assert_throws_dom("TypeMismatchError", function() {
-        self.crypto.getRandomValues(new Float32Array(65537))
+        const len = 65536 / Float32Array.BYTES_PER_ELEMENT + 1;
+        self.crypto.getRandomValues(new Float32Array(len));
     }, "Float32Array (too long)")
     assert_throws_dom("TypeMismatchError", function() {
-        self.crypto.getRandomValues(new Float64Array(65537))
+        const len = 65536 / Float64Array.BYTES_PER_ELEMENT + 1;
+        self.crypto.getRandomValues(new Float64Array(len))
     }, "Float64Array (too long)")
-}, "Float arrays")
+}, "Float arrays");
+
+test(function() {
+    assert_throws_dom("TypeMismatchError", function() {
+        self.crypto.getRandomValues(new DataView(new ArrayBuffer(6)))
+    }, "DataView")
+
+    assert_throws_dom("TypeMismatchError", function() {
+        self.crypto.getRandomValues(new DataView(new ArrayBuffer(65536 + 1)))
+    }, "DataView (too long)")
+}, "DataView");
 
 const arrays = [
     'Int8Array',
@@ -45,4 +68,10 @@ for (const array of arrays) {
     test(function() {
         assert_true(self.crypto.getRandomValues(new ctor(0)).length == 0)
     }, "Null arrays: " + array);
+
+    test(function() {
+        class Buffer extends ctor {}
+        // Must not throw for the test to pass
+        self.crypto.getRandomValues(new Buffer(256));
+    }, "Subclass of " + array);
 }

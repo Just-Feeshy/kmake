@@ -6,6 +6,8 @@
 #define V8_DATE_DATEPARSER_INL_H_
 
 #include "src/date/dateparser.h"
+// Include the non-inl header before the rest of the headers.
+
 #include "src/execution/isolate.h"
 #include "src/strings/char-predicates-inl.h"
 
@@ -192,7 +194,7 @@ DateParser::DateToken DateParser::DateStringTokenizer<CharType>::Scan() {
   if (in_->Skip('+')) return DateToken::Symbol('+');
   if (in_->Skip('.')) return DateToken::Symbol('.');
   if (in_->Skip(')')) return DateToken::Symbol(')');
-  if (in_->IsAsciiAlphaOrAbove()) {
+  if (in_->IsAsciiAlphaOrAbove() && !in_->IsWhiteSpaceChar()) {
     DCHECK_EQ(KeywordTable::kPrefixLength, 3);
     uint32_t buffer[3] = {0, 0, 0};
     int length = in_->ReadWord(buffer, 3);

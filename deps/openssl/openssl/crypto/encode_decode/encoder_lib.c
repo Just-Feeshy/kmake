@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,7 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include "e_os.h"                /* strcasecmp on Windows */
 #include <openssl/core_names.h>
 #include <openssl/bio.h>
 #include <openssl/encoder.h>
@@ -57,6 +56,11 @@ int OSSL_ENCODER_to_bio(OSSL_ENCODER_CTX *ctx, BIO *out)
                        "No encoders were found. For standard encoders you need "
                        "at least one of the default or base providers "
                        "available. Did you forget to load them?");
+        return 0;
+    }
+
+    if (ctx->cleanup == NULL || ctx->construct == NULL) {
+        ERR_raise(ERR_LIB_OSSL_ENCODER, ERR_R_INIT_FAIL);
         return 0;
     }
 
@@ -453,8 +457,8 @@ static int encoder_process(struct encoder_process_data_st *data)
          */
         if (top) {
             if (data->ctx->output_type != NULL
-                && strcasecmp(current_output_type,
-                              data->ctx->output_type) != 0) {
+                && OPENSSL_strcasecmp(current_output_type,
+                                      data->ctx->output_type) != 0) {
                 OSSL_TRACE_BEGIN(ENCODER) {
                     BIO_printf(trc_out,
                                "[%d]    Skipping because current encoder output type (%s) != desired output type (%s)\n",
@@ -482,8 +486,8 @@ static int encoder_process(struct encoder_process_data_st *data)
          */
         if (data->ctx->output_structure != NULL
             && current_output_structure != NULL) {
-            if (strcasecmp(data->ctx->output_structure,
-                           current_output_structure) != 0) {
+            if (OPENSSL_strcasecmp(data->ctx->output_structure,
+                                   current_output_structure) != 0) {
                 OSSL_TRACE_BEGIN(ENCODER) {
                     BIO_printf(trc_out,
                                "[%d]    Skipping because current encoder output structure (%s) != ctx output structure (%s)\n",

@@ -24,7 +24,10 @@ all: \
   dh512.pem \
   dh1024.pem \
   dh2048.pem \
+  dh3072.pem \
   dherror.pem \
+  dh_private.pem \
+  dh_public.pem \
   dsa_params.pem \
   dsa_private.pem \
   dsa_private_encrypted.pem \
@@ -37,6 +40,14 @@ all: \
   ec-cert.pem \
   ec.pfx \
   fake-cnnic-root-cert.pem \
+  intermediate-ca-cert.pem \
+  intermediate-ca-key.pem \
+  leaf-from-intermediate-cert.pem \
+  leaf-from-intermediate-key.pem \
+  non-trusted-intermediate-ca-cert.pem \
+  non-trusted-intermediate-ca-key.pem \
+  non-trusted-leaf-from-intermediate-cert.pem \
+  non-trusted-leaf-from-intermediate-key.pem \
   rsa_private.pem \
   rsa_private_encrypted.pem \
   rsa_private_pkcs8.pem \
@@ -55,10 +66,8 @@ all: \
   rsa_cert_foafssl_b.exponent \
   rsa_spkac.spkac \
   rsa_spkac_invalid.spkac \
-  rsa_private_1024.pem \
   rsa_private_2048.pem \
   rsa_private_4096.pem \
-  rsa_public_1024.pem \
   rsa_public_2048.pem \
   rsa_public_4096.pem \
   rsa_pss_private_2048.pem \
@@ -111,7 +120,7 @@ ca2-cert.pem: ca2.cnf
 # ('password' is used for the CA password.)
 #
 ca3-key.pem:
-	openssl genrsa -out ca3-key.pem 1024
+	openssl genrsa -out ca3-key.pem 2048
 
 ca3-csr.pem: ca3.cnf ca3-key.pem
 	openssl req -new \
@@ -137,7 +146,7 @@ ca3-cert.pem: ca3-csr.pem ca3-key.pem ca3.cnf ca1-cert.pem ca1-key.pem
 # ('password' is used for the CA password.)
 #
 ca4-key.pem:
-	openssl genrsa -out ca4-key.pem 1024
+	openssl genrsa -out ca4-key.pem 2048
 
 ca4-csr.pem: ca4.cnf ca4-key.pem
 	openssl req -new \
@@ -235,12 +244,108 @@ fake-startcom-root-cert.pem: fake-startcom-root.cnf \
 	echo '01' > fake-startcom-root-serial
 	touch fake-startcom-root-database.txt
 
+
+intermediate-ca-key.pem:
+	openssl genrsa -out intermediate.key 2048
+
+intermediate-ca-cert.pem: intermediate-ca-key.pem
+	openssl req -new \
+			-sha256 \
+			-nodes \
+			-key intermediate.key  \
+			-subj "/C=US/ST=CA/L=SF/O=NODEJS/CN=NodeJS-Test-Intermediate-CA" \
+			-out test-intermediate-ca.csr
+
+	openssl x509 -req \
+			-extensions v3_ca \
+			-extfile fake-startcom-root.cnf \
+			-in test-intermediate-ca.csr \
+			-CA fake-startcom-root-cert.pem \
+			-CAkey fake-startcom-root-key.pem \
+			-CAcreateserial \
+			-out intermediate-ca.pem \
+			-days 99999 \
+			-sha256
+	rm -f test-intermediate-ca.csr
+
+leaf-from-intermediate-key.pem:
+	openssl genrsa -out leaf-from-intermediate-key.pem 2048
+
+leaf-from-intermediate-cert.pem: leaf-from-intermediate-key.pem
+	openssl genrsa -out leaf-from-intermediate-key.pem 2048
+	openssl req -new \
+			-sha256 \
+			-nodes \
+			-key leaf-from-intermediate-key.pem \
+			-addext "subjectAltName = DNS:localhost" \
+			-subj "/C=US/ST=CA/L=SF/O=NODEJS/CN=localhost" \
+			-out leaf-from-intermediate-cert.csr
+	openssl x509 -req \
+			-in leaf-from-intermediate-cert.csr \
+			-CA intermediate-ca.pem \
+			-CAkey intermediate.key \
+			-CAcreateserial \
+			-out leaf-from-intermediate-cert.pem \
+			-days 99999 \
+			-copy_extensions copy \
+			-sha256
+
+	rm -f leaf-from-intermediate-cert.csr
+
+non-trusted-intermediate-ca-key.pem:
+	openssl genrsa -out non-trusted-intermediate.key 2048
+
+non-trusted-intermediate-ca-cert.pem: non-trusted-intermediate-ca-key.pem
+	openssl req -new \
+			-sha256 \
+			-nodes \
+			-key non-trusted-intermediate.key  \
+			-subj "/C=US/ST=CA/L=SF/O=NODEJS/CN=NodeJS-Non-Trusted-Test-Intermediate-CA" \
+			-out non-trusted-test-intermediate-ca.csr
+
+	openssl x509 -req \
+			-extensions v3_ca \
+			-extfile fake-startcom-root.cnf \
+			-in non-trusted-test-intermediate-ca.csr \
+			-passin "pass:password" \
+			-CA ca1-cert.pem \
+			-CAkey ca1-key.pem \
+			-CAcreateserial \
+			-out non-trusted-intermediate-ca.pem \
+			-days 99999 \
+			-sha256
+	rm -f non-trusted-test-intermediate-ca.csr
+
+non-trusted-leaf-from-intermediate-key.pem:
+	openssl genrsa -out non-trusted-leaf-from-intermediate-key.pem 2048
+
+non-trusted-leaf-from-intermediate-cert.pem: non-trusted-leaf-from-intermediate-key.pem
+	openssl genrsa -out non-trusted-leaf-from-intermediate-key.pem 2048
+	openssl req -new \
+			-sha256 \
+			-nodes \
+			-key non-trusted-leaf-from-intermediate-key.pem \
+			-addext "subjectAltName = DNS:localhost" \
+			-subj "/C=US/ST=CA/L=SF/O=NODEJS/CN=localhost" \
+			-out non-trusted-leaf-from-intermediate-cert.csr
+	openssl x509 -req \
+			-in non-trusted-leaf-from-intermediate-cert.csr \
+			-CA non-trusted-intermediate-ca.pem \
+			-CAkey non-trusted-intermediate.key \
+			-CAcreateserial \
+			-out non-trusted-leaf-from-intermediate-cert.pem \
+			-days 99999 \
+			-copy_extensions copy \
+			-sha256
+
+	rm -f non-trusted-leaf-from-intermediate-cert.csr
+
 #
 # agent1 is signed by ca1.
 #
 
 agent1-key.pem:
-	openssl genrsa -out agent1-key.pem 1024
+	openssl genrsa -out agent1-key.pem 2048
 
 agent1-csr.pem: agent1.cnf agent1-key.pem
 	openssl req -new -config agent1.cnf -key agent1-key.pem -out agent1-csr.pem
@@ -275,7 +380,7 @@ agent1-verify: agent1-cert.pem ca1-cert.pem
 #
 # Generate new private key
 agent2-key.pem:
-	openssl genrsa -out agent2-key.pem 1024
+	openssl genrsa -out agent2-key.pem 2048
 
 # Create a Certificate Signing Request for the key
 agent2-csr.pem: agent2-key.pem agent2.cnf
@@ -297,7 +402,7 @@ agent2-verify: agent2-cert.pem
 #
 
 agent3-key.pem:
-	openssl genrsa -out agent3-key.pem 1024
+	openssl genrsa -out agent3-key.pem 2048
 
 agent3-csr.pem: agent3.cnf agent3-key.pem
 	openssl req -new -config agent3.cnf -key agent3-key.pem -out agent3-csr.pem
@@ -321,7 +426,7 @@ agent3-verify: agent3-cert.pem ca2-cert.pem
 #
 
 agent4-key.pem:
-	openssl genrsa -out agent4-key.pem 1024
+	openssl genrsa -out agent4-key.pem 2048
 
 agent4-csr.pem: agent4.cnf agent4-key.pem
 	openssl req -new -config agent4.cnf -key agent4-key.pem -out agent4-csr.pem
@@ -363,7 +468,7 @@ ca2-crl.pem: ca2-key.pem ca2-cert.pem ca2.cnf agent4-cert.pem
 #
 
 agent5-key.pem:
-	openssl genrsa -out agent5-key.pem 1024
+	openssl genrsa -out agent5-key.pem 2048
 
 agent5-csr.pem: agent5.cnf agent5-key.pem
 	openssl req -new -config agent5.cnf -key agent5-key.pem -out agent5-csr.pem
@@ -388,7 +493,7 @@ agent5-verify: agent5-cert.pem ca2-cert.pem
 #
 
 agent6-key.pem:
-	openssl genrsa -out agent6-key.pem 1024
+	openssl genrsa -out agent6-key.pem 2048
 
 agent6-csr.pem: agent6.cnf agent6-key.pem
 	openssl req -new -config agent6.cnf -key agent6-key.pem -out agent6-csr.pem
@@ -499,7 +604,7 @@ agent9-cert.pem: agent9-csr.pem
 #
 
 agent10-key.pem:
-	openssl genrsa -out agent10-key.pem 1024
+	openssl genrsa -out agent10-key.pem 2048
 
 agent10-csr.pem: agent10.cnf agent10-key.pem
 	openssl req -new -config agent10.cnf -key agent10-key.pem -out agent10-csr.pem
@@ -596,8 +701,17 @@ dh1024.pem:
 dh2048.pem:
 	openssl dhparam -out dh2048.pem 2048
 
-dherror.pem: dh512.pem
-	sed 's/^[^-].*/AAAAAAAAAA/g' dh512.pem > dherror.pem
+dh3072.pem:
+	openssl dhparam -out dh3072.pem 3072
+
+dherror.pem: dh1024.pem
+	sed 's/^[^-].*/AAAAAAAAAA/g' dh1024.pem > dherror.pem
+
+dh_private.pem:
+	openssl genpkey -algorithm dh -out dh_private.pem -pkeyopt dh_param:ffdhe2048
+
+dh_public.pem: dh_private.pem
+	openssl pkey -in dh_private.pem -pubout -out dh_public.pem
 
 dsa_params.pem:
 	openssl dsaparam -out dsa_params.pem 2048
@@ -687,17 +801,11 @@ rsa_spkac.spkac: rsa_private.pem
 rsa_spkac_invalid.spkac: rsa_spkac.spkac
 	cat rsa_spkac.spkac | cut -c 5- > rsa_spkac_invalid.spkac
 
-rsa_private_1024.pem:
-	openssl genrsa -out rsa_private_1024.pem 1024
-
 rsa_private_2048.pem:
 	openssl genrsa -out rsa_private_2048.pem 2048
 
 rsa_private_4096.pem:
 	openssl genrsa -out rsa_private_4096.pem 4096
-
-rsa_public_1024.pem: rsa_private_1024.pem
-	openssl rsa -in rsa_private_1024.pem -pubout -out rsa_public_1024.pem
 
 rsa_public_2048.pem: rsa_private_2048.pem
 	openssl rsa -in rsa_private_2048.pem -pubout -out rsa_public_2048.pem

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -336,13 +336,6 @@
 
 /* Flag used on OpenSSL ciphersuite ids to indicate they are for SSLv3+ */
 # define SSL3_CK_CIPHERSUITE_FLAG                0x03000000
-
-/* Check if an SSL structure is using QUIC (which uses TLSv1.3) */
-# ifndef OPENSSL_NO_QUIC
-#  define SSL_IS_QUIC(s)  (s->quic_method != NULL)
-# else
-#  define SSL_IS_QUIC(s) 0
-# endif
 
 /* Check if an SSL structure is using DTLS */
 # define SSL_IS_DTLS(s)  (s->method->ssl3_enc->enc_flags & SSL_ENC_FLAG_DTLS)
@@ -773,8 +766,6 @@ typedef enum tlsext_index_en {
     TLSEXT_IDX_cryptopro_bug,
     TLSEXT_IDX_early_data,
     TLSEXT_IDX_certificate_authorities,
-    TLSEXT_IDX_quic_transport_params_draft,
-    TLSEXT_IDX_quic_transport_params,
     TLSEXT_IDX_padding,
     TLSEXT_IDX_psk,
     /* Dummy index - must always be the last entry */
@@ -820,6 +811,9 @@ int ssl_hmac_final(SSL_HMAC *ctx, unsigned char *md, size_t *len,
 size_t ssl_hmac_size(const SSL_HMAC *ctx);
 
 int ssl_get_EC_curve_nid(const EVP_PKEY *pkey);
+__owur int tls13_set_encoded_pub_key(EVP_PKEY *pkey,
+                                     const unsigned char *enckey,
+                                     size_t enckeylen);
 
 typedef struct tls_group_info_st {
     char *tlsname;           /* Curve Name as in TLS specs */
@@ -907,6 +901,9 @@ struct ssl_ctx_st {
                                                 * other processes - spooky
                                                 * :-) */
     } stats;
+#ifdef TSAN_REQUIRES_LOCKING
+    CRYPTO_RWLOCK *tsan_lock;
+#endif
 
     CRYPTO_REF_COUNT references;
 
@@ -1208,24 +1205,9 @@ struct ssl_ctx_st {
     uint32_t disabled_mac_mask;
     uint32_t disabled_mkey_mask;
     uint32_t disabled_auth_mask;
-
-#ifndef OPENSSL_NO_QUIC
-    const SSL_QUIC_METHOD *quic_method;
-#endif
 };
 
 typedef struct cert_pkey_st CERT_PKEY;
-
-#ifndef OPENSSL_NO_QUIC
-struct quic_data_st {
-    struct quic_data_st *next;
-    OSSL_ENCRYPTION_LEVEL level;
-    size_t start;       /* offset into quic_buf->data */
-    size_t length;
-};
-typedef struct quic_data_st QUIC_DATA;
-int quic_set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level);
-#endif
 
 struct ssl_st {
     /*
@@ -1486,11 +1468,6 @@ struct ssl_st {
     unsigned char handshake_traffic_hash[EVP_MAX_MD_SIZE];
     unsigned char client_app_traffic_secret[EVP_MAX_MD_SIZE];
     unsigned char server_app_traffic_secret[EVP_MAX_MD_SIZE];
-# ifndef OPENSSL_NO_QUIC
-    unsigned char client_hand_traffic_secret[EVP_MAX_MD_SIZE];
-    unsigned char server_hand_traffic_secret[EVP_MAX_MD_SIZE];
-    unsigned char client_early_traffic_secret[EVP_MAX_MD_SIZE];
-# endif
     unsigned char exporter_master_secret[EVP_MAX_MD_SIZE];
     unsigned char early_exporter_master_secret[EVP_MAX_MD_SIZE];
     EVP_CIPHER_CTX *enc_read_ctx; /* cryptographic state */
@@ -1703,35 +1680,8 @@ struct ssl_st {
          * selected.
          */
         int tick_identity;
-
-#ifndef OPENSSL_NO_QUIC
-        uint8_t *quic_transport_params;
-        size_t quic_transport_params_len;
-        uint8_t *peer_quic_transport_params_draft;
-        size_t peer_quic_transport_params_draft_len;
-        uint8_t *peer_quic_transport_params;
-        size_t peer_quic_transport_params_len;
-#endif
     } ext;
 
-#ifndef OPENSSL_NO_QUIC
-    OSSL_ENCRYPTION_LEVEL quic_read_level;
-    OSSL_ENCRYPTION_LEVEL quic_write_level;
-    OSSL_ENCRYPTION_LEVEL quic_latest_level_received;
-    BUF_MEM *quic_buf;          /* buffer incoming handshake messages */
-    /*
-     * defaults to 0, but can be set to:
-     * - TLSEXT_TYPE_quic_transport_parameters_draft
-     * - TLSEXT_TYPE_quic_transport_parameters
-     * Client: if 0, send both
-     * Server: if 0, use same version as client sent
-     */
-    int quic_transport_version;
-    QUIC_DATA *quic_input_data_head;
-    QUIC_DATA *quic_input_data_tail;
-    size_t quic_next_record_start;
-    const SSL_QUIC_METHOD *quic_method;
-#endif
     /*
      * Parsed form of the ClientHello, kept around across client_hello_cb
      * calls.
@@ -2480,6 +2430,7 @@ __owur int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk);
 __owur int ssl_build_cert_chain(SSL *s, SSL_CTX *ctx, int flags);
 __owur int ssl_cert_set_cert_store(CERT *c, X509_STORE *store, int chain,
                                    int ref);
+__owur int ssl_cert_get_cert_store(CERT *c, X509_STORE **pstore, int chain);
 
 __owur int ssl_security(const SSL *s, int op, int bits, int nid, void *other);
 __owur int ssl_ctx_security(const SSL_CTX *ctx, int op, int bits, int nid,
@@ -2801,7 +2752,9 @@ __owur int ssl_log_secret(SSL *ssl, const char *label,
 #define CLIENT_HANDSHAKE_LABEL "CLIENT_HANDSHAKE_TRAFFIC_SECRET"
 #define SERVER_HANDSHAKE_LABEL "SERVER_HANDSHAKE_TRAFFIC_SECRET"
 #define CLIENT_APPLICATION_LABEL "CLIENT_TRAFFIC_SECRET_0"
+#define CLIENT_APPLICATION_N_LABEL "CLIENT_TRAFFIC_SECRET_N"
 #define SERVER_APPLICATION_LABEL "SERVER_TRAFFIC_SECRET_0"
+#define SERVER_APPLICATION_N_LABEL "SERVER_TRAFFIC_SECRET_N"
 #define EARLY_EXPORTER_SECRET_LABEL "EARLY_EXPORTER_SECRET"
 #define EXPORTER_SECRET_LABEL "EXPORTER_SECRET"
 
@@ -2858,11 +2811,6 @@ void custom_exts_free(custom_ext_methods *exts);
 
 void ssl_comp_free_compression_methods_int(void);
 
-#ifndef OPENSSL_NO_QUIC
-__owur int SSL_clear_not_quic(SSL *s);
-__owur int SSL_clear_quic(SSL *s);
-#endif
-
 /* ssl_mcnf.c */
 void ssl_ctx_system_config(SSL_CTX *ctx);
 
@@ -2908,4 +2856,31 @@ void ssl_session_calculate_timeout(SSL_SESSION* ss);
 #  define ssl3_setup_buffers SSL_test_functions()->p_ssl3_setup_buffers
 
 # endif
+
+/* Some helper routines to support TSAN operations safely */
+static ossl_unused ossl_inline int ssl_tsan_lock(const SSL_CTX *ctx)
+{
+#ifdef TSAN_REQUIRES_LOCKING
+    if (!CRYPTO_THREAD_write_lock(ctx->tsan_lock))
+        return 0;
+#endif
+    return 1;
+}
+
+static ossl_unused ossl_inline void ssl_tsan_unlock(const SSL_CTX *ctx)
+{
+#ifdef TSAN_REQUIRES_LOCKING
+    CRYPTO_THREAD_unlock(ctx->tsan_lock);
+#endif
+}
+
+static ossl_unused ossl_inline void ssl_tsan_counter(const SSL_CTX *ctx,
+                                                     TSAN_QUALIFIER int *stat)
+{
+    if (ssl_tsan_lock(ctx)) {
+        tsan_counter(stat);
+        ssl_tsan_unlock(ctx);
+    }
+}
+
 #endif

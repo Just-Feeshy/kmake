@@ -239,6 +239,14 @@ assert.throws(() => dns.lookup('nodejs.org', 4), {
   name: 'TypeError'
 });
 
+assert.throws(() => dns.lookup('', {
+  family: 'nodejs.org',
+  hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL,
+}), {
+  code: 'ERR_INVALID_ARG_TYPE',
+  name: 'TypeError'
+});
+
 dns.lookup('', { family: 4, hints: 0 }, common.mustCall());
 
 dns.lookup('', {
@@ -264,6 +272,16 @@ dns.lookup('', {
   hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL
 }, common.mustCall());
 
+dns.lookup('', {
+  hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL,
+  family: 'IPv4'
+}, common.mustCall());
+
+dns.lookup('', {
+  hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL,
+  family: 'IPv6'
+}, common.mustCall());
+
 (async function() {
   await dnsPromises.lookup('', { family: 4, hints: 0 });
   await dnsPromises.lookup('', { family: 6, hints: dns.ADDRCONFIG });
@@ -274,7 +292,7 @@ dns.lookup('', {
   await dnsPromises.lookup('', {
     hints: dns.ADDRCONFIG | dns.V4MAPPED | dns.ALL
   });
-  await dnsPromises.lookup('', { verbatim: true });
+  await dnsPromises.lookup('', { order: 'verbatim' });
 })().then(common.mustCall());
 
 {
@@ -310,8 +328,6 @@ dns.lookup('', {
 const portErr = (port) => {
   const err = {
     code: 'ERR_SOCKET_BAD_PORT',
-    message:
-      `Port should be >= 0 and < 65536. Received ${port}.`,
     name: 'RangeError'
   };
 
@@ -323,10 +339,7 @@ const portErr = (port) => {
     dns.lookupService('0.0.0.0', port, common.mustNotCall());
   }, err);
 };
-portErr(null);
-portErr(undefined);
-portErr(65538);
-portErr('test');
+[null, undefined, 65538, 'test', NaN, Infinity, Symbol(), 0n, true, false, '', () => {}, {}].forEach(portErr);
 
 assert.throws(() => {
   dns.lookupService('0.0.0.0', 80, null);
@@ -348,11 +361,11 @@ assert.throws(() => {
   const cases = [
     { method: 'resolveAny',
       answers: [
-        { type: 'A', address: '1.2.3.4', ttl: 3333333333 },
-        { type: 'AAAA', address: '::42', ttl: 3333333333 },
-        { type: 'MX', priority: 42, exchange: 'foobar.com', ttl: 3333333333 },
-        { type: 'NS', value: 'foobar.org', ttl: 3333333333 },
-        { type: 'PTR', value: 'baz.org', ttl: 3333333333 },
+        { type: 'A', address: '1.2.3.4', ttl: 0 },
+        { type: 'AAAA', address: '::42', ttl: 0 },
+        { type: 'MX', priority: 42, exchange: 'foobar.com', ttl: 0 },
+        { type: 'NS', value: 'foobar.org', ttl: 0 },
+        { type: 'PTR', value: 'baz.org', ttl: 0 },
         {
           type: 'SOA',
           nsname: 'ns1.example.com',
@@ -367,11 +380,11 @@ assert.throws(() => {
 
     { method: 'resolve4',
       options: { ttl: true },
-      answers: [ { type: 'A', address: '1.2.3.4', ttl: 3333333333 } ] },
+      answers: [ { type: 'A', address: '1.2.3.4', ttl: 0 } ] },
 
     { method: 'resolve6',
       options: { ttl: true },
-      answers: [ { type: 'AAAA', address: '::42', ttl: 3333333333 } ] },
+      answers: [ { type: 'AAAA', address: '::42', ttl: 0 } ] },
 
     { method: 'resolveSoa',
       answers: [

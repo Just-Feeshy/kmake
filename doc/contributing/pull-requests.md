@@ -27,7 +27,6 @@
 * [Notes](#notes)
   * [Commit squashing](#commit-squashing)
   * [Getting approvals for your pull request](#getting-approvals-for-your-pull-request)
-  * [CI testing](#ci-testing)
   * [Waiting until the pull request gets landed](#waiting-until-the-pull-request-gets-landed)
   * [Check out the collaborator guide](#check-out-the-collaborator-guide)
   * [Appendix: subsystems](#appendix-subsystems)
@@ -35,9 +34,11 @@
 ## Dependencies
 
 Node.js has several bundled dependencies in the _deps/_ and the _tools/_
-directories that are not part of the project proper. Changes to files in those
-directories should be sent to their respective projects. Do not send a patch to
-Node.js. We cannot accept such patches.
+directories that are not part of the project proper.
+These are detailed in the [maintaining dependencies][] document.
+Changes to files in those directories should be sent
+to their respective projects.
+Do not send a patch to Node.js. We cannot accept such patches.
 
 In case of doubt, open an issue in the
 [issue tracker](https://github.com/nodejs/node/issues/) or contact one of the
@@ -47,12 +48,12 @@ Node.js has many channels on the
 [OpenJS Foundation Slack](https://slack-invite.openjsf.org/). Interesting
 channels are:
 [#nodejs](https://openjs-foundation.slack.com/archives/CK9Q4MB53) for general
-help, questions and discussions.
-[#nodejs-dev](https://openjs-foundation.slack.com/archives/C019Y2T6STH) for
+help, questions, and discussions.
+[#nodejs-core](https://openjs-foundation.slack.com/archives/C019Y2T6STH) for
 development of Node.js core specifically.
 
 Node.js also has an unofficial IRC channel:
-[#Node.js](https://web.libera.chat/?channels=node.js).
+[#Node.js](https://web.libera.chat/#node.js).
 
 ## Setting up your local environment
 
@@ -71,7 +72,7 @@ it's time to create a fork.
 Fork the project [on GitHub](https://github.com/nodejs/node) and clone your fork
 locally.
 
-```text
+```bash
 git clone git@github.com:username/node.git
 cd node
 git remote add upstream https://github.com/nodejs/node.git
@@ -80,7 +81,7 @@ git fetch upstream
 
 Configure `git` so that it knows who you are:
 
-```text
+```bash
 git config user.name "J. Random User"
 git config user.email "j.random.user@example.com"
 ```
@@ -100,7 +101,7 @@ As a best practice to keep your development environment as organized as
 possible, create local branches to work within. These should also be created
 directly off of the upstream default branch.
 
-```text
+```bash
 git checkout -b my-branch -t upstream/HEAD
 ```
 
@@ -108,20 +109,20 @@ git checkout -b my-branch -t upstream/HEAD
 
 ### Step 3: Code
 
-The vast majority of pull requests opened against the `nodejs/node`
-repository includes changes to one or more of the following:
+Pull requests in Node.js typically involve changes to
+one or more of a few places in the repository.
 
-* the C/C++ code contained in the `src` directory
-* the JavaScript code contained in the `lib` directory
-* the documentation in `doc/api`
-* tests within the `test` directory.
+* C/C++ code contained in the `src` directory
+* JavaScript code contained in the `lib` directory
+* Documentation in `doc/api`
+* Tests within the `test` directory
 
 If you are modifying code, please be sure to run `make lint` (or
 `vcbuild.bat lint` on Windows) to ensure that the changes follow the Node.js
 code style guide.
 
 Any documentation you write (including code comments and API documentation)
-should follow the [Style Guide](../../README.md). Code samples
+should follow the [Style Guide](../../doc/README.md). Code samples
 included in the API docs will also be checked when running `make lint` (or
 `vcbuild.bat lint` on Windows). If you are adding to or deprecating an API,
 add or change the appropriate YAML documentation. Use `REPLACEME` for the
@@ -148,7 +149,7 @@ as possible within individual commits. There is no limit to the number of
 commits any single pull request may have, and many contributors find it easier
 to review changes that are split across multiple commits.
 
-```text
+```bash
 git add my/changed/files
 git commit
 ```
@@ -183,6 +184,11 @@ A good commit message should describe what changed and why.
    of the log. Use the `Fixes:` prefix and the full issue URL. For other
    references use `Refs:`.
 
+   `Fixes:` and `Refs:` trailers get automatically added to your commit message
+   when the Pull Request lands as long as they are included in the
+   Pull Request's description. If the Pull Request lands in several commits,
+   by default the trailers found in the description are added to each commits.
+
    Examples:
 
    * `Fixes: https://github.com/nodejs/node/issues/1337`
@@ -191,7 +197,7 @@ A good commit message should describe what changed and why.
 
 5. If your commit introduces a breaking change (`semver-major`), it should
    contain an explanation about the reason of the breaking change, which
-   situation would trigger the breaking change and what is the exact change.
+   situation would trigger the breaking change, and what is the exact change.
 
 Sample complete commit message:
 
@@ -218,7 +224,7 @@ As a best practice, once you have committed your changes, it is a good idea
 to use `git rebase` (not `git merge`) to synchronize your work with the main
 repository.
 
-```text
+```bash
 git fetch upstream HEAD
 git rebase FETCH_HEAD
 ```
@@ -240,14 +246,18 @@ later.
 Before submitting your changes in a pull request, always run the full Node.js
 test suite. To run the tests (including code linting) on Unix / macOS:
 
-```text
+```bash
 ./configure && make -j4 test
 ```
 
+We can speed up the builds by using [Ninja](https://ninja-build.org/). For more
+information, see
+[Building Node.js with Ninja](building-node-with-ninja.md).
+
 And on Windows:
 
-```text
-> vcbuild test
+```powershell
+vcbuild test
 ```
 
 For some configurations, running all tests might take a long time (an hour or
@@ -260,7 +270,7 @@ Once you are sure your commits are ready to go, with passing tests and linting,
 begin the process of opening a pull request by pushing your working branch to
 your fork on GitHub.
 
-```text
+```bash
 git push origin my-branch
 ```
 
@@ -289,7 +299,7 @@ To make changes to an existing pull request, make the changes to your local
 branch, add a new commit with those changes, and push those to your fork.
 GitHub will automatically update the pull request.
 
-```text
+```bash
 git add my/changed/files
 git commit
 git push origin my-branch
@@ -298,7 +308,7 @@ git push origin my-branch
 If a git conflict arises, it is necessary to synchronize your branch with other
 changes that have landed upstream by using `git rebase`:
 
-```text
+```bash
 git fetch upstream HEAD
 git rebase FETCH_HEAD
 git push --force-with-lease origin my-branch
@@ -316,7 +326,7 @@ There are a number of more advanced mechanisms for managing commits using
 Feel free to post a comment in the pull request to ping reviewers if you are
 awaiting an answer on something. If you encounter words or acronyms that
 seem unfamiliar, refer to this
-[glossary](https://sites.google.com/a/chromium.org/dev/glossary).
+[glossary](https://github.com/nodejs/node/blob/HEAD/glossary.md).
 
 #### Approval and request changes workflow
 
@@ -333,7 +343,7 @@ say so, or contact one of the other contributors in the project and seek their
 input. Often such comments are the result of the reviewer having only taken a
 short amount of time to review and are not ill-intended. Such issues can often
 be resolved with a bit of patience. That said, reviewers should be expected to
-be helpful in their feedback, and feedback that is simply vague, dismissive and
+be helpful in their feedback, and feedback that is simply vague, dismissive, and
 unhelpful is likely safe to ignore.
 
 ### Step 10: Landing
@@ -390,7 +400,7 @@ Focus first on the most significant aspects of the change:
 When changes are necessary, _request_ them, do not _demand_ them, and do not
 assume that the submitter already knows how to add a test or run a benchmark.
 
-Specific performance optimization techniques, coding styles and conventions
+Specific performance optimization techniques, coding styles, and conventions
 change over time. The first impression you give to a new contributor never does.
 
 Nits (requests for small changes that are not essential) are fine, but try to
@@ -433,8 +443,13 @@ check with the contributor to see if they intend to continue the work before
 checking if they would mind if you took it over (especially if it just has
 nits left). When doing so, it is courteous to give the original contributor
 credit for the work they started (either by preserving their name and email
-address in the commit log, or by using an `Author:` meta-data tag in the
+address) in the commit log, or by using an `Author:` meta-data tag in the
 commit.
+
+If a pull request has been inactive for more than six months, add the `stalled` label
+to it. That will trigger an automation that adds a comment explaining the pull request
+may be close for inactivity, giving a heads-up to the contributor before actually
+closing it if it remains inactive.
 
 ### Approving a change
 
@@ -507,17 +522,18 @@ feedback.
 All pull requests that contain changes to code must be run through
 continuous integration (CI) testing at [https://ci.nodejs.org/][].
 
-Only Node.js core collaborators with commit rights to the `nodejs/node`
-repository may start a CI testing run. The specific details of how to do
-this are included in the new collaborator [Onboarding guide][].
+Only Node.js core collaborators and triagers can start a CI testing run. The
+specific details of how to do this are included in the new collaborator
+[Onboarding guide][]. Usually, a collaborator or triager will start a CI
+test run for you as approvals for the pull request come in.
+If not, you can ask a collaborator or triager to start a CI run.
 
 Ideally, the code change will pass ("be green") on all platform configurations
-supported by Node.js (there are over 30 platform configurations currently).
-This means that all tests pass and there are no linting errors. In reality,
-however, it is not uncommon for the CI infrastructure itself to fail on
-specific platforms or for so-called "flaky" tests to fail ("be red"). It is
-vital to visually inspect the results of all failed ("red") tests to determine
-whether the failure was caused by the changes in the pull request.
+supported by Node.js. This means that all tests pass and there are no linting
+errors. In reality, however, it is not uncommon for the CI infrastructure itself
+to fail on specific platforms or for so-called "flaky" tests to fail ("be red").
+It is vital to visually inspect the results of all failed ("red") tests to
+determine whether the failure was caused by the changes in the pull request.
 
 ## Notes
 
@@ -542,22 +558,11 @@ A pull request is approved either by saying LGTM, which stands for
 "Looks Good To Me", or by using GitHub's Approve button.
 GitHub's pull request review feature can be used during the process.
 For more information, check out
-[the video tutorial](https://www.youtube.com/watch?v=HW0RPaJqm4g)
-or [the official documentation](https://help.github.com/articles/reviewing-changes-in-pull-requests/).
+[the official documentation](https://help.github.com/articles/reviewing-changes-in-pull-requests/).
 
 After you push new changes to your branch, you need to get
 approval for these new changes again, even if GitHub shows "Approved"
 because the reviewers have hit the buttons before.
-
-### CI testing
-
-Every pull request needs to be tested
-to make sure that it works on the platforms that Node.js
-supports. This is done by running the code through the CI system.
-
-Only a collaborator can start a CI run. Usually one of them will do it
-for you as approvals for the pull request come in.
-If not, you can ask a collaborator to start a CI run.
 
 ### Waiting until the pull request gets landed
 
@@ -587,7 +592,7 @@ You can find the full list of supported subsystems in the
 More than one subsystem may be valid for any particular issue or pull request.
 
 [Building guide]: ../../BUILDING.md
-[CI (Continuous Integration) test run]: #ci-testing
+[CI (Continuous Integration) test run]: #continuous-integration-testing
 [Code of Conduct]: https://github.com/nodejs/admin/blob/HEAD/CODE_OF_CONDUCT.md
 [Onboarding guide]: ../../onboarding.md
 [approved]: #getting-approvals-for-your-pull-request
@@ -596,6 +601,7 @@ More than one subsystem may be valid for any particular issue or pull request.
 [guide for writing tests in Node.js]: writing-tests.md
 [hiding-a-comment]: https://help.github.com/articles/managing-disruptive-comments/#hiding-a-comment
 [https://ci.nodejs.org/]: https://ci.nodejs.org/
+[maintaining dependencies]: ./maintaining/maintaining-dependencies.md
 [nodejs/core-validate-commit]: https://github.com/nodejs/core-validate-commit/blob/main/lib/rules/subsystem.js
 [pull request template]: https://raw.githubusercontent.com/nodejs/node/HEAD/.github/PULL_REQUEST_TEMPLATE.md
 [running tests]: ../../BUILDING.md#running-tests

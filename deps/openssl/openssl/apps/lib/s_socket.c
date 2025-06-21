@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -162,7 +162,7 @@ int init_client(int *sock, const char *host, const char *port,
 #endif
 
         if (!BIO_connect(*sock, BIO_ADDRINFO_address(ai),
-                         protocol == IPPROTO_TCP ? BIO_SOCK_NODELAY : 0)) {
+                         BIO_ADDRINFO_protocol(ai) == IPPROTO_TCP ? BIO_SOCK_NODELAY : 0)) {
             BIO_closesocket(*sock);
             *sock = INVALID_SOCKET;
             continue;
@@ -380,6 +380,12 @@ int do_server(int *accept_sock, const char *host, const char *port,
                 BIO_closesocket(asock);
                 break;
             }
+
+            if (naccept != -1)
+                naccept--;
+            if (naccept == 0)
+                BIO_closesocket(asock);
+
             BIO_set_tcp_ndelay(sock, 1);
             i = (*cb)(sock, type, protocol, context);
 
@@ -410,11 +416,12 @@ int do_server(int *accept_sock, const char *host, const char *port,
 
             BIO_closesocket(sock);
         } else {
+            if (naccept != -1)
+                naccept--;
+
             i = (*cb)(asock, type, protocol, context);
         }
 
-        if (naccept != -1)
-            naccept--;
         if (i < 0 || naccept == 0) {
             BIO_closesocket(asock);
             ret = i;

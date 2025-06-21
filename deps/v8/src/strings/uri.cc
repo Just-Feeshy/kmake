@@ -136,7 +136,7 @@ bool IntoTwoByte(int index, bool is_uri, int uri_length,
   return true;
 }
 
-bool IntoOneAndTwoByte(Handle<String> uri, bool is_uri,
+bool IntoOneAndTwoByte(DirectHandle<String> uri, bool is_uri,
                        std::vector<uint8_t>* one_byte_buffer,
                        std::vector<base::uc16>* two_byte_buffer) {
   DisallowGarbageCollection no_gc;
@@ -174,14 +174,14 @@ bool IntoOneAndTwoByte(Handle<String> uri, bool is_uri,
 
 }  // anonymous namespace
 
-MaybeHandle<String> Uri::Decode(Isolate* isolate, Handle<String> uri,
-                                bool is_uri) {
+MaybeDirectHandle<String> Uri::Decode(Isolate* isolate,
+                                      DirectHandle<String> uri, bool is_uri) {
   uri = String::Flatten(isolate, uri);
   std::vector<uint8_t> one_byte_buffer;
   std::vector<base::uc16> two_byte_buffer;
 
   if (!IntoOneAndTwoByte(uri, is_uri, &one_byte_buffer, &two_byte_buffer)) {
-    THROW_NEW_ERROR(isolate, NewURIError(), String);
+    THROW_NEW_ERROR(isolate, NewURIError());
   }
 
   if (two_byte_buffer.empty()) {
@@ -189,12 +189,11 @@ MaybeHandle<String> Uri::Decode(Isolate* isolate, Handle<String> uri,
         one_byte_buffer.data(), static_cast<int>(one_byte_buffer.size())));
   }
 
-  Handle<SeqTwoByteString> result;
+  DirectHandle<SeqTwoByteString> result;
   int result_length =
       static_cast<int>(one_byte_buffer.size() + two_byte_buffer.size());
   ASSIGN_RETURN_ON_EXCEPTION(
-      isolate, result, isolate->factory()->NewRawTwoByteString(result_length),
-      String);
+      isolate, result, isolate->factory()->NewRawTwoByteString(result_length));
 
   DisallowGarbageCollection no_gc;
   base::uc16* chars = result->GetChars(no_gc);
@@ -278,13 +277,14 @@ void EncodePair(base::uc16 cc1, base::uc16 cc2, std::vector<uint8_t>* buffer) {
 
 }  // anonymous namespace
 
-MaybeHandle<String> Uri::Encode(Isolate* isolate, Handle<String> uri,
-                                bool is_uri) {
+MaybeDirectHandle<String> Uri::Encode(Isolate* isolate,
+                                      DirectHandle<String> uri, bool is_uri) {
   uri = String::Flatten(isolate, uri);
   int uri_length = uri->length();
   std::vector<uint8_t> buffer;
   buffer.reserve(uri_length);
 
+  bool throw_error = false;
   {
     DisallowGarbageCollection no_gc;
     String::FlatContent uri_content = uri->GetFlatContent(no_gc);
@@ -310,11 +310,15 @@ MaybeHandle<String> Uri::Encode(Isolate* isolate, Handle<String> uri,
         continue;
       }
 
-      AllowGarbageCollection allocate_error_and_return;
-      THROW_NEW_ERROR(isolate, NewURIError(), String);
+      // String::FlatContent DCHECKs its contents did not change during its
+      // lifetime. Throwing the error inside the loop may cause GC and move the
+      // string contents.
+      throw_error = true;
+      break;
     }
   }
 
+  if (throw_error) THROW_NEW_ERROR(isolate, NewURIError());
   return isolate->factory()->NewStringFromOneByte(base::VectorOf(buffer));
 }
 
@@ -342,16 +346,16 @@ int UnescapeChar(base::Vector<const Char> vector, int i, int length,
 }
 
 template <typename Char>
-MaybeHandle<String> UnescapeSlow(Isolate* isolate, Handle<String> string,
+MaybeHandle<String> UnescapeSlow(Isolate* isolate, DirectHandle<String> string,
                                  int start_index) {
   bool one_byte = true;
-  int length = string->length();
+  uint32_t length = string->length();
 
   int unescaped_length = 0;
   {
     DisallowGarbageCollection no_gc;
     base::Vector<const Char> vector = string->GetCharVector<Char>(no_gc);
-    for (int i = start_index; i < length; unescaped_length++) {
+    for (uint32_t i = start_index; i < length; unescaped_length++) {
       int step;
       if (UnescapeChar(vector, i, length, &step) >
           String::kMaxOneByteCharCode) {
@@ -361,7 +365,7 @@ MaybeHandle<String> UnescapeSlow(Isolate* isolate, Handle<String> string,
     }
   }
 
-  DCHECK(start_index < length);
+  DCHECK_LT(start_index, length);
   Handle<String> first_part =
       isolate->factory()->NewProperSubString(string, 0, start_index);
 
@@ -374,7 +378,7 @@ MaybeHandle<String> UnescapeSlow(Isolate* isolate, Handle<String> string,
                                         .ToHandleChecked();
     DisallowGarbageCollection no_gc;
     base::Vector<const Char> vector = string->GetCharVector<Char>(no_gc);
-    for (int i = start_index; i < length; dest_position++) {
+    for (uint32_t i = start_index; i < length; dest_position++) {
       int step;
       dest->SeqOneByteStringSet(dest_position,
                                 UnescapeChar(vector, i, length, &step));
@@ -387,7 +391,7 @@ MaybeHandle<String> UnescapeSlow(Isolate* isolate, Handle<String> string,
                                         .ToHandleChecked();
     DisallowGarbageCollection no_gc;
     base::Vector<const Char> vector = string->GetCharVector<Char>(no_gc);
-    for (int i = start_index; i < length; dest_position++) {
+    for (uint32_t i = start_index; i < length; dest_position++) {
       int step;
       dest->SeqTwoByteStringSet(dest_position,
                                 UnescapeChar(vector, i, length, &step));
@@ -434,13 +438,13 @@ template <typename Char>
 static MaybeHandle<String> EscapePrivate(Isolate* isolate,
                                          Handle<String> string) {
   DCHECK(string->IsFlat());
-  int escaped_length = 0;
-  int length = string->length();
+  uint32_t escaped_length = 0;
+  uint32_t length = string->length();
 
   {
     DisallowGarbageCollection no_gc;
     base::Vector<const Char> vector = string->GetCharVector<Char>(no_gc);
-    for (int i = 0; i < length; i++) {
+    for (uint32_t i = 0; i < length; i++) {
       uint16_t c = vector[i];
       if (c >= 256) {
         escaped_length += 6;
@@ -461,14 +465,13 @@ static MaybeHandle<String> EscapePrivate(Isolate* isolate,
 
   Handle<SeqOneByteString> dest;
   ASSIGN_RETURN_ON_EXCEPTION(
-      isolate, dest, isolate->factory()->NewRawOneByteString(escaped_length),
-      String);
+      isolate, dest, isolate->factory()->NewRawOneByteString(escaped_length));
   int dest_position = 0;
 
   {
     DisallowGarbageCollection no_gc;
     base::Vector<const Char> vector = string->GetCharVector<Char>(no_gc);
-    for (int i = 0; i < length; i++) {
+    for (uint32_t i = 0; i < length; i++) {
       uint16_t c = vector[i];
       if (c >= 256) {
         dest->SeqOneByteStringSet(dest_position, '%');
@@ -501,16 +504,15 @@ static MaybeHandle<String> EscapePrivate(Isolate* isolate,
 
 }  // anonymous namespace
 
-MaybeHandle<String> Uri::Escape(Isolate* isolate, Handle<String> string) {
-  Handle<String> result;
+MaybeDirectHandle<String> Uri::Escape(Isolate* isolate, Handle<String> string) {
   string = String::Flatten(isolate, string);
   return String::IsOneByteRepresentationUnderneath(*string)
              ? EscapePrivate<uint8_t>(isolate, string)
              : EscapePrivate<base::uc16>(isolate, string);
 }
 
-MaybeHandle<String> Uri::Unescape(Isolate* isolate, Handle<String> string) {
-  Handle<String> result;
+MaybeDirectHandle<String> Uri::Unescape(Isolate* isolate,
+                                        Handle<String> string) {
   string = String::Flatten(isolate, string);
   return String::IsOneByteRepresentationUnderneath(*string)
              ? UnescapePrivate<uint8_t>(isolate, string)

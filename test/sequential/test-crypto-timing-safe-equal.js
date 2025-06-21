@@ -1,3 +1,4 @@
+// Flags: --expose-internals --no-warnings --allow-natives-syntax
 'use strict';
 const common = require('../common');
 if (!common.hasCrypto)
@@ -32,6 +33,41 @@ assert.strictEqual(
   }
 }
 
+{
+  // When the inputs are floating-point numbers, timingSafeEqual neither has
+  // equality nor SameValue semantics. It just compares the underlying bytes,
+  // ignoring the TypedArray type completely.
+
+  const cmp = (fn) => (a, b) => a.every((x, i) => fn(x, b[i]));
+  const eq = cmp((a, b) => a === b);
+  const is = cmp(Object.is);
+
+  function test(a, b, { equal, sameValue, timingSafeEqual }) {
+    assert.strictEqual(eq(a, b), equal);
+    assert.strictEqual(is(a, b), sameValue);
+    assert.strictEqual(crypto.timingSafeEqual(a, b), timingSafeEqual);
+  }
+
+  test(new Float32Array([NaN]), new Float32Array([NaN]), {
+    equal: false,
+    sameValue: true,
+    timingSafeEqual: true
+  });
+
+  test(new Float64Array([0]), new Float64Array([-0]), {
+    equal: true,
+    sameValue: false,
+    timingSafeEqual: false
+  });
+
+  const x = new BigInt64Array([0x7ff0000000000001n, 0xfff0000000000001n]);
+  test(new Float64Array(x.buffer), new Float64Array([NaN, NaN]), {
+    equal: false,
+    sameValue: true,
+    timingSafeEqual: false
+  });
+}
+
 assert.throws(
   () => crypto.timingSafeEqual(Buffer.from([1, 2, 3]), Buffer.from([1, 2])),
   {
@@ -56,3 +92,28 @@ assert.throws(
     name: 'TypeError',
   }
 );
+
+{
+  // V8 Fast API
+  const foo = Buffer.from('foo');
+  const bar = Buffer.from('bar');
+  const longer = Buffer.from('longer');
+  function testFastPath(buf1, buf2) {
+    return crypto.timingSafeEqual(buf1, buf2);
+  }
+  eval('%PrepareFunctionForOptimization(testFastPath)');
+  assert.strictEqual(testFastPath(foo, bar), false);
+  eval('%OptimizeFunctionOnNextCall(testFastPath)');
+  assert.strictEqual(testFastPath(foo, bar), false);
+  assert.strictEqual(testFastPath(foo, foo), true);
+  assert.throws(() => testFastPath(foo, longer), {
+    code: 'ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH',
+  });
+
+  if (common.isDebug) {
+    const { internalBinding } = require('internal/test/binding');
+    const { getV8FastApiCallCount } = internalBinding('debug');
+    assert.strictEqual(getV8FastApiCallCount('crypto.timingSafeEqual.ok'), 2);
+    assert.strictEqual(getV8FastApiCallCount('crypto.timingSafeEqual.error'), 1);
+  }
+}

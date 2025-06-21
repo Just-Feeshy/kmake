@@ -620,16 +620,14 @@ public:
     virtual void getOffset(UDate date, UBool local, int32_t& rawOffset,
                            int32_t& dstOffset, UErrorCode& ec) const override;
 
-#ifndef U_FORCE_HIDE_DRAFT_API
     /**
      * Get time zone offsets from local wall time.
-     * @draft ICU 69
+     * @stable ICU 69
      */
     virtual void getOffsetFromLocal(
         UDate date, UTimeZoneLocalOption nonExistingTimeOpt,
         UTimeZoneLocalOption duplicatedTimeOpt,
         int32_t& rawOffset, int32_t& dstOffset, UErrorCode& status) const override;
-#endif /* U_FORCE_HIDE_DRAFT_API */
 
     /**
      * Returns the TimeZone's raw GMT offset (i.e., the number of milliseconds to add
@@ -638,7 +636,7 @@ public:
      * @return   The TimeZone's raw GMT offset.
      * @stable ICU 2.0
      */
-    virtual int32_t getRawOffset(void) const override;
+    virtual int32_t getRawOffset() const override;
 
     /**
      * Sets the TimeZone's raw GMT offset (i.e., the number of milliseconds to add
@@ -668,7 +666,7 @@ public:
      * but not 0.
      * @stable ICU 2.0
      */
-    virtual int32_t getDSTSavings(void) const override;
+    virtual int32_t getDSTSavings() const override;
 
     /**
      * Queries if this TimeZone uses Daylight Savings Time.
@@ -676,7 +674,7 @@ public:
      * @return   True if this TimeZone uses Daylight Savings Time; false otherwise.
      * @stable ICU 2.0
      */
-    virtual UBool useDaylightTime(void) const override;
+    virtual UBool useDaylightTime() const override;
 
 #ifndef U_FORCE_HIDE_DEPRECATED_API
     /**
@@ -746,7 +744,7 @@ public:
     /**
      * Gets the <code>InitialTimeZoneRule</code> and the set of <code>TimeZoneRule</code>
      * which represent time transitions for this time zone.  On successful return,
-     * the argument initial points to non-NULL <code>InitialTimeZoneRule</code> and
+     * the argument initial points to non-nullptr <code>InitialTimeZoneRule</code> and
      * the array trsrules is filled with 0 or multiple <code>TimeZoneRule</code>
      * instances up to the size specified by trscount.  The results are referencing the
      * rule instance held by this time zone instance.  Therefore, after this time zone
@@ -775,7 +773,7 @@ public:
      *           same class ID. Objects of other classes have different class IDs.
      * @stable ICU 2.0
      */
-    virtual UClassID getDynamicClassID(void) const override;
+    virtual UClassID getDynamicClassID() const override;
 
     /**
      * Return the class ID for this class. This is useful only for comparing to a return
@@ -788,7 +786,7 @@ public:
      * @return   The class ID for all objects of this class.
      * @stable ICU 2.0
      */
-    static UClassID U_EXPORT2 getStaticClassID(void);
+    static UClassID U_EXPORT2 getStaticClassID();
 
 private:
     /**
@@ -802,7 +800,7 @@ private:
         DOW_LE_DOM_MODE
     };
 
-    SimpleTimeZone(); // default constructor not implemented
+    SimpleTimeZone() = delete; // default constructor not implemented
 
     /**
      * Internal construction method.
@@ -884,8 +882,8 @@ private:
     /* Private for BasicTimeZone implementation */
     void checkTransitionRules(UErrorCode& status) const;
     void initTransitionRules(UErrorCode& status);
-    void clearTransitionRules(void);
-    void deleteTransitionRules(void);
+    void clearTransitionRules();
+    void deleteTransitionRules();
     UBool   transitionRulesInitialized;
     InitialTimeZoneRule*    initialRule;
     TimeZoneTransition*     firstTransition;

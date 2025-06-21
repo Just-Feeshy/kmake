@@ -7,11 +7,12 @@
 
 #include <memory>
 
-#include "v8-context.h"       // NOLINT(build/include_directory)
 #include "v8-internal.h"      // NOLINT(build/include_directory)
 #include "v8-local-handle.h"  // NOLINT(build/include_directory)
 
 namespace v8 {
+
+class Context;
 
 namespace internal {
 class EmbedderState;
@@ -19,9 +20,10 @@ class EmbedderState;
 
 // A StateTag represents a possible state of the embedder.
 enum class EmbedderStateTag : uint8_t {
+  // reserved
   EMPTY = 0,
-  // embedder can define any state in between
-  OTHER = UINT8_MAX,
+  OTHER = 1,
+  // embedder can define any state after
 };
 
 // A stack-allocated class that manages an embedder state on the isolate.

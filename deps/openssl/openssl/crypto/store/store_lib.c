@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -93,7 +93,7 @@ OSSL_STORE_open_ex(const char *uri, OSSL_LIB_CTX *libctx, const char *propq,
     OPENSSL_strlcpy(scheme_copy, uri, sizeof(scheme_copy));
     if ((p = strchr(scheme_copy, ':')) != NULL) {
         *p++ = '\0';
-        if (strcasecmp(scheme_copy, "file") != 0) {
+        if (OPENSSL_strcasecmp(scheme_copy, "file") != 0) {
             if (strncmp(p, "//", 2) == 0)
                 schemes_n--;         /* Invalidate the file scheme */
             schemes[schemes_n++] = scheme_copy;
@@ -424,14 +424,14 @@ OSSL_STORE_INFO *OSSL_STORE_load(OSSL_STORE_CTX *ctx)
 
             load_data.v = NULL;
             load_data.ctx = ctx;
+            ctx->error_flag = 0;
 
             if (!ctx->fetched_loader->p_load(ctx->loader_ctx,
                                              ossl_store_handle_load_result,
                                              &load_data,
                                              ossl_pw_passphrase_callback_dec,
                                              &ctx->pwdata)) {
-                if (!OSSL_STORE_eof(ctx))
-                    ctx->error_flag = 1;
+                ctx->error_flag = 1;
                 return NULL;
             }
             v = load_data.v;

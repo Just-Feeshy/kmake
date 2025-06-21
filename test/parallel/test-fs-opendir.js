@@ -48,9 +48,10 @@ const invalidCallbackObj = {
   const entries = files.map(() => {
     const dirent = dir.readSync();
     assertDirent(dirent);
-    return dirent.name;
-  });
-  assert.deepStrictEqual(files, entries.sort());
+    return { name: dirent.name, parentPath: dirent.parentPath, toString() { return dirent.name; } };
+  }).sort();
+  assert.deepStrictEqual(entries.map((d) => d.name), files);
+  assert.deepStrictEqual(entries.map((d) => d.parentPath), Array(entries.length).fill(testDir));
 
   // dir.read should return null when no more entries exist
   assert.strictEqual(dir.readSync(), null);
@@ -67,18 +68,16 @@ const invalidCallbackObj = {
 // Check the opendir async version
 fs.opendir(testDir, common.mustSucceed((dir) => {
   let sync = true;
-  dir.read(common.mustCall((err, dirent) => {
+  dir.read(common.mustSucceed((dirent) => {
     assert(!sync);
-    assert.ifError(err);
 
     // Order is operating / file system dependent
     assert(files.includes(dirent.name), `'files' should include ${dirent}`);
     assertDirent(dirent);
 
     let syncInner = true;
-    dir.read(common.mustCall((err, dirent) => {
+    dir.read(common.mustSucceed((dirent) => {
       assert(!syncInner);
-      assert.ifError(err);
 
       dir.close(common.mustSucceed());
     }));
@@ -161,19 +160,19 @@ async function doAsyncIterBreakTest() {
     break;
   }
 
-  await assert.rejects(async () => dir.read(), dirclosedError);
+  await assert.rejects(dir.read(), dirclosedError);
 }
 doAsyncIterBreakTest().then(common.mustCall());
 
 async function doAsyncIterReturnTest() {
   const dir = await fs.promises.opendir(testDir);
   await (async function() {
-    for await (const dirent of dir) { // eslint-disable-line no-unused-vars
+    for await (const dirent of dir) {
       return;
     }
   })();
 
-  await assert.rejects(async () => dir.read(), dirclosedError);
+  await assert.rejects(dir.read(), dirclosedError);
 }
 doAsyncIterReturnTest().then(common.mustCall());
 
@@ -189,21 +188,21 @@ async function doAsyncIterThrowTest() {
     }
   }
 
-  await assert.rejects(async () => dir.read(), dirclosedError);
+  await assert.rejects(dir.read(), dirclosedError);
 }
 doAsyncIterThrowTest().then(common.mustCall());
 
 // Check error thrown on invalid values of bufferSize
 for (const bufferSize of [-1, 0, 0.5, 1.5, Infinity, NaN]) {
   assert.throws(
-    () => fs.opendirSync(testDir, { bufferSize }),
+    () => fs.opendirSync(testDir, common.mustNotMutateObjectDeep({ bufferSize })),
     {
       code: 'ERR_OUT_OF_RANGE'
     });
 }
 for (const bufferSize of ['', '1', null]) {
   assert.throws(
-    () => fs.opendirSync(testDir, { bufferSize }),
+    () => fs.opendirSync(testDir, common.mustNotMutateObjectDeep({ bufferSize })),
     {
       code: 'ERR_INVALID_ARG_TYPE'
     });
@@ -211,7 +210,7 @@ for (const bufferSize of ['', '1', null]) {
 
 // Check that passing a positive integer as bufferSize works
 {
-  const dir = fs.opendirSync(testDir, { bufferSize: 1024 });
+  const dir = fs.opendirSync(testDir, common.mustNotMutateObjectDeep({ bufferSize: 1024 }));
   assertDirent(dir.readSync());
   dir.close();
 }

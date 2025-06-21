@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -80,6 +80,9 @@ static int print_labeled_bignum(BIO *out, const char *label, const BIGNUM *bn)
     }
 
     hex_str = BN_bn2hex(bn);
+    if (hex_str == NULL)
+        return 0;
+
     p = hex_str;
     if (*p == '-') {
         ++p;
@@ -109,7 +112,8 @@ static int print_labeled_bignum(BIO *out, const char *label, const BIGNUM *bn)
             use_sep = 0; /* The first byte on the next line doesnt have a : */
         }
         if (BIO_printf(out, "%s%c%c", use_sep ? ":" : "",
-                       tolower(p[0]), tolower(p[1])) <= 0)
+                       tolower((unsigned char)p[0]),
+                       tolower((unsigned char)p[1])) <= 0)
             goto err;
         ++bytes;
         p += 2;
@@ -217,6 +221,7 @@ static int dh_to_text(BIO *out, const void *key, int selection)
     const BIGNUM *priv_key = NULL, *pub_key = NULL;
     const FFC_PARAMS *params = NULL;
     const BIGNUM *p = NULL;
+    long length;
 
     if (out == NULL || dh == NULL) {
         ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
@@ -237,7 +242,7 @@ static int dh_to_text(BIO *out, const void *key, int selection)
             return 0;
         }
     }
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0) {
         pub_key = DH_get0_pub_key(dh);
         if (pub_key == NULL) {
             ERR_raise(ERR_LIB_PROV, PROV_R_NOT_A_PUBLIC_KEY);
@@ -268,6 +273,11 @@ static int dh_to_text(BIO *out, const void *key, int selection)
         return 0;
     if (params != NULL
         && !ffc_params_to_text(out, params))
+        return 0;
+    length = DH_get_length(dh);
+    if (length > 0
+        && BIO_printf(out, "recommended-private-length: %ld bits\n",
+                      length) <= 0)
         return 0;
 
     return 1;
@@ -307,7 +317,7 @@ static int dsa_to_text(BIO *out, const void *key, int selection)
             return 0;
         }
     }
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0) {
         pub_key = DSA_get0_pub_key(dsa);
         if (pub_key == NULL) {
             ERR_raise(ERR_LIB_PROV, PROV_R_NOT_A_PUBLIC_KEY);
@@ -516,7 +526,7 @@ static int ec_to_text(BIO *out, const void *key, int selection)
         if (priv_len == 0)
             goto err;
     }
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0) {
         const EC_POINT *pub_pt = EC_KEY_get0_public_key(ec);
 
         if (pub_pt == NULL) {
@@ -566,26 +576,31 @@ static int ecx_to_text(BIO *out, const void *key, int selection)
         return 0;
     }
 
+    switch (ecx->type) {
+    case ECX_KEY_TYPE_X25519:
+        type_label = "X25519";
+        break;
+    case ECX_KEY_TYPE_X448:
+        type_label = "X448";
+        break;
+    case ECX_KEY_TYPE_ED25519:
+        type_label = "ED25519";
+        break;
+    case ECX_KEY_TYPE_ED448:
+        type_label = "ED448";
+        break;
+    }
+
     if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
         if (ecx->privkey == NULL) {
             ERR_raise(ERR_LIB_PROV, PROV_R_NOT_A_PRIVATE_KEY);
             return 0;
         }
 
-        switch (ecx->type) {
-        case ECX_KEY_TYPE_X25519:
-            type_label = "X25519 Private-Key";
-            break;
-        case ECX_KEY_TYPE_X448:
-            type_label = "X448 Private-Key";
-            break;
-        case ECX_KEY_TYPE_ED25519:
-            type_label = "ED25519 Private-Key";
-            break;
-        case ECX_KEY_TYPE_ED448:
-            type_label = "ED448 Private-Key";
-            break;
-        }
+        if (BIO_printf(out, "%s Private-Key:\n", type_label) <= 0)
+            return 0;
+        if (!print_labeled_buf(out, "priv:", ecx->privkey, ecx->keylen))
+            return 0;
     } else if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
         /* ecx->pubkey is an array, not a pointer... */
         if (!ecx->haspubkey) {
@@ -593,29 +608,11 @@ static int ecx_to_text(BIO *out, const void *key, int selection)
             return 0;
         }
 
-        switch (ecx->type) {
-        case ECX_KEY_TYPE_X25519:
-            type_label = "X25519 Public-Key";
-            break;
-        case ECX_KEY_TYPE_X448:
-            type_label = "X448 Public-Key";
-            break;
-        case ECX_KEY_TYPE_ED25519:
-            type_label = "ED25519 Public-Key";
-            break;
-        case ECX_KEY_TYPE_ED448:
-            type_label = "ED448 Public-Key";
-            break;
-        }
+        if (BIO_printf(out, "%s Public-Key:\n", type_label) <= 0)
+            return 0;
     }
 
-    if (BIO_printf(out, "%s:\n", type_label) <= 0)
-        return 0;
-    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0
-        && !print_labeled_buf(out, "priv:", ecx->privkey, ecx->keylen))
-        return 0;
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0
-        && !print_labeled_buf(out, "pub:", ecx->pubkey, ecx->keylen))
+    if (!print_labeled_buf(out, "pub:", ecx->pubkey, ecx->keylen))
         return 0;
 
     return 1;

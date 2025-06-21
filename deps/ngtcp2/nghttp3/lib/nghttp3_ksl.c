@@ -34,9 +34,15 @@
 #include "nghttp3_mem.h"
 #include "nghttp3_range.h"
 
+static nghttp3_ksl_blk null_blk = {{{NULL, NULL, 0, 0, {0}}}};
+
+nghttp3_objalloc_def(ksl_blk, nghttp3_ksl_blk, oplent);
+
 static size_t ksl_nodelen(size_t keylen) {
-  return (sizeof(nghttp3_ksl_node) + keylen - sizeof(uint64_t) + 0xf) &
-         (size_t)~0xf;
+  assert(keylen >= sizeof(uint64_t));
+
+  return (sizeof(nghttp3_ksl_node) + keylen - sizeof(uint64_t) + 0x7u) &
+         ~(uintptr_t)0x7u;
 }
 
 static size_t ksl_blklen(size_t nodelen) {
@@ -52,31 +58,48 @@ static void ksl_node_set_key(nghttp3_ksl *ksl, nghttp3_ksl_node *node,
   memcpy(node->key, key, ksl->keylen);
 }
 
-int nghttp3_ksl_init(nghttp3_ksl *ksl, nghttp3_ksl_compar compar, size_t keylen,
-                     const nghttp3_mem *mem) {
+void nghttp3_ksl_init(nghttp3_ksl *ksl, nghttp3_ksl_compar compar,
+                      size_t keylen, const nghttp3_mem *mem) {
   size_t nodelen = ksl_nodelen(keylen);
-  size_t blklen = ksl_blklen(nodelen);
-  nghttp3_ksl_blk *head;
 
-  ksl->head = nghttp3_mem_malloc(mem, blklen);
-  if (!ksl->head) {
-    return NGHTTP3_ERR_NOMEM;
-  }
-  ksl->front = ksl->back = ksl->head;
+  nghttp3_objalloc_init(&ksl->blkalloc,
+                        (ksl_blklen(nodelen) + 0xfu) & ~(uintptr_t)0xfu, mem);
+
+  ksl->head = NULL;
+  ksl->front = ksl->back = NULL;
   ksl->compar = compar;
+  ksl->n = 0;
   ksl->keylen = keylen;
   ksl->nodelen = nodelen;
-  ksl->n = 0;
-  ksl->mem = mem;
+}
 
-  head = ksl->head;
+static nghttp3_ksl_blk *ksl_blk_objalloc_new(nghttp3_ksl *ksl) {
+  return nghttp3_objalloc_ksl_blk_len_get(&ksl->blkalloc,
+                                          ksl_blklen(ksl->nodelen));
+}
+
+static void ksl_blk_objalloc_del(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk) {
+  nghttp3_objalloc_ksl_blk_release(&ksl->blkalloc, blk);
+}
+
+static int ksl_head_init(nghttp3_ksl *ksl) {
+  nghttp3_ksl_blk *head = ksl_blk_objalloc_new(ksl);
+
+  if (!head) {
+    return NGHTTP3_ERR_NOMEM;
+  }
+
   head->next = head->prev = NULL;
   head->n = 0;
   head->leaf = 1;
 
+  ksl->head = head;
+  ksl->front = ksl->back = head;
+
   return 0;
 }
 
+#ifdef NOMEMPOOL
 /*
  * ksl_free_blk frees |blk| recursively.
  */
@@ -89,15 +112,20 @@ static void ksl_free_blk(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk) {
     }
   }
 
-  nghttp3_mem_free(ksl->mem, blk);
+  ksl_blk_objalloc_del(ksl, blk);
 }
+#endif /* defined(NOMEMPOOL) */
 
 void nghttp3_ksl_free(nghttp3_ksl *ksl) {
-  if (!ksl) {
+  if (!ksl || !ksl->head) {
     return;
   }
 
+#ifdef NOMEMPOOL
   ksl_free_blk(ksl, ksl->head);
+#endif /* defined(NOMEMPOOL) */
+
+  nghttp3_objalloc_free(&ksl->blkalloc);
 }
 
 /*
@@ -111,27 +139,28 @@ void nghttp3_ksl_free(nghttp3_ksl *ksl) {
 static nghttp3_ksl_blk *ksl_split_blk(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk) {
   nghttp3_ksl_blk *rblk;
 
-  rblk = nghttp3_mem_malloc(ksl->mem, ksl_blklen(ksl->nodelen));
+  rblk = ksl_blk_objalloc_new(ksl);
   if (rblk == NULL) {
     return NULL;
   }
 
   rblk->next = blk->next;
   blk->next = rblk;
+
   if (rblk->next) {
     rblk->next->prev = rblk;
   } else if (ksl->back == blk) {
     ksl->back = rblk;
   }
+
   rblk->prev = blk;
   rblk->leaf = blk->leaf;
 
   rblk->n = blk->n / 2;
-
-  memcpy(rblk->nodes, blk->nodes + ksl->nodelen * (blk->n - rblk->n),
-         ksl->nodelen * rblk->n);
-
   blk->n -= rblk->n;
+
+  memcpy(rblk->nodes, blk->nodes + ksl->nodelen * blk->n,
+         ksl->nodelen * rblk->n);
 
   assert(blk->n >= NGHTTP3_KSL_MIN_NBLK);
   assert(rblk->n >= NGHTTP3_KSL_MIN_NBLK);
@@ -148,7 +177,7 @@ static nghttp3_ksl_blk *ksl_split_blk(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk) {
  * codes:
  *
  * NGHTTP3_ERR_NOMEM
- *   Out of memory.
+ *     Out of memory.
  */
 static int ksl_split_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
   nghttp3_ksl_node *node;
@@ -184,7 +213,7 @@ static int ksl_split_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
  * codes:
  *
  * NGHTTP3_ERR_NOMEM
- *   Out of memory.
+ *     Out of memory.
  */
 static int ksl_split_head(nghttp3_ksl *ksl) {
   nghttp3_ksl_blk *rblk = NULL, *lblk, *nhead = NULL;
@@ -197,11 +226,13 @@ static int ksl_split_head(nghttp3_ksl *ksl) {
 
   lblk = ksl->head;
 
-  nhead = nghttp3_mem_malloc(ksl->mem, ksl_blklen(ksl->nodelen));
+  nhead = ksl_blk_objalloc_new(ksl);
+
   if (nhead == NULL) {
-    nghttp3_mem_free(ksl->mem, rblk);
+    ksl_blk_objalloc_del(ksl, rblk);
     return NGHTTP3_ERR_NOMEM;
   }
+
   nhead->next = nhead->prev = NULL;
   nhead->n = 2;
   nhead->leaf = 0;
@@ -222,9 +253,9 @@ static int ksl_split_head(nghttp3_ksl *ksl) {
 }
 
 /*
- * insert_node inserts a node whose key is |key| with the associated
- * |data| at the index of |i|.  This function assumes that the number
- * of nodes contained by |blk| is strictly less than
+ * ksl_insert_node inserts a node whose key is |key| with the
+ * associated |data| at the index of |i|.  This function assumes that
+ * the number of nodes contained by |blk| is strictly less than
  * NGHTTP3_KSL_MAX_NBLK.
  */
 static void ksl_insert_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i,
@@ -243,42 +274,45 @@ static void ksl_insert_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i,
   ++blk->n;
 }
 
-static size_t ksl_bsearch(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
-                          const nghttp3_ksl_key *key,
-                          nghttp3_ksl_compar compar) {
-  nghttp3_ssize left = -1, right = (nghttp3_ssize)blk->n, mid;
+static size_t ksl_search(const nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
+                         const nghttp3_ksl_key *key,
+                         nghttp3_ksl_compar compar) {
+  size_t i;
   nghttp3_ksl_node *node;
 
-  while (right - left > 1) {
-    mid = (left + right) >> 1;
-    node = nghttp3_ksl_nth_node(ksl, blk, (size_t)mid);
-    if (compar((nghttp3_ksl_key *)node->key, key)) {
-      left = mid;
-    } else {
-      right = mid;
-    }
-  }
+  for (i = 0, node = (nghttp3_ksl_node *)(void *)blk->nodes;
+       i < blk->n && compar((nghttp3_ksl_key *)node->key, key);
+       ++i, node = (nghttp3_ksl_node *)(void *)((uint8_t *)node + ksl->nodelen))
+    ;
 
-  return (size_t)right;
+  return i;
 }
 
 int nghttp3_ksl_insert(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
                        const nghttp3_ksl_key *key, void *data) {
-  nghttp3_ksl_blk *blk = ksl->head;
+  nghttp3_ksl_blk *blk;
   nghttp3_ksl_node *node;
   size_t i;
   int rv;
 
-  if (blk->n == NGHTTP3_KSL_MAX_NBLK) {
+  if (!ksl->head) {
+    rv = ksl_head_init(ksl);
+    if (rv != 0) {
+      return rv;
+    }
+  }
+
+  if (ksl->head->n == NGHTTP3_KSL_MAX_NBLK) {
     rv = ksl_split_head(ksl);
     if (rv != 0) {
       return rv;
     }
-    blk = ksl->head;
   }
 
+  blk = ksl->head;
+
   for (;;) {
-    i = ksl_bsearch(ksl, blk, key, ksl->compar);
+    i = ksl_search(ksl, blk, key, ksl->compar);
 
     if (blk->leaf) {
       if (i < blk->n &&
@@ -286,13 +320,17 @@ int nghttp3_ksl_insert(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
         if (it) {
           *it = nghttp3_ksl_end(ksl);
         }
+
         return NGHTTP3_ERR_INVALID_ARGUMENT;
       }
+
       ksl_insert_node(ksl, blk, i, key, data);
       ++ksl->n;
+
       if (it) {
         nghttp3_ksl_it_init(it, ksl, blk, i);
       }
+
       return 0;
     }
 
@@ -305,16 +343,21 @@ int nghttp3_ksl_insert(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
           if (rv != 0) {
             return rv;
           }
+
           node = nghttp3_ksl_nth_node(ksl, blk, blk->n - 1);
         }
+
         ksl_node_set_key(ksl, node, key);
         blk = node->blk;
       }
+
       ksl_insert_node(ksl, blk, blk->n, key, data);
       ++ksl->n;
+
       if (it) {
         nghttp3_ksl_it_init(it, ksl, blk, blk->n - 1);
       }
+
       return 0;
     }
 
@@ -325,8 +368,10 @@ int nghttp3_ksl_insert(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
       if (rv != 0) {
         return rv;
       }
+
       if (ksl->compar((nghttp3_ksl_key *)node->key, key)) {
         node = nghttp3_ksl_nth_node(ksl, blk, i + 1);
+
         if (ksl->compar((nghttp3_ksl_key *)node->key, key)) {
           ksl_node_set_key(ksl, node, key);
         }
@@ -352,19 +397,22 @@ static void ksl_remove_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
  * ksl_merge_node merges 2 nodes which are the nodes at the index of
  * |i| and |i + 1|.
  *
- * If |blk| is the direct descendant of head (root) block and the head
- * block contains just 2 nodes, the merged block becomes head block,
- * which decreases the height of |ksl| by 1.
+ * If |blk| is the head (root) block and it contains just 2 nodes
+ * before merging nodes, the merged block becomes head block, which
+ * decreases the height of |ksl| by 1.
  *
  * This function returns the pointer to the merged block.
  */
 static nghttp3_ksl_blk *ksl_merge_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
                                        size_t i) {
+  nghttp3_ksl_node *lnode;
   nghttp3_ksl_blk *lblk, *rblk;
 
   assert(i + 1 < blk->n);
 
-  lblk = nghttp3_ksl_nth_node(ksl, blk, i)->blk;
+  lnode = nghttp3_ksl_nth_node(ksl, blk, i);
+
+  lblk = lnode->blk;
   rblk = nghttp3_ksl_nth_node(ksl, blk, i + 1)->blk;
 
   assert(lblk->n + rblk->n < NGHTTP3_KSL_MAX_NBLK);
@@ -374,20 +422,21 @@ static nghttp3_ksl_blk *ksl_merge_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
 
   lblk->n += rblk->n;
   lblk->next = rblk->next;
+
   if (lblk->next) {
     lblk->next->prev = lblk;
   } else if (ksl->back == rblk) {
     ksl->back = lblk;
   }
 
-  nghttp3_mem_free(ksl->mem, rblk);
+  ksl_blk_objalloc_del(ksl, rblk);
 
   if (ksl->head == blk && blk->n == 2) {
-    nghttp3_mem_free(ksl->mem, ksl->head);
+    ksl_blk_objalloc_del(ksl, ksl->head);
     ksl->head = lblk;
   } else {
     ksl_remove_node(ksl, blk, i + 1);
-    ksl_node_set_key(ksl, nghttp3_ksl_nth_node(ksl, blk, i),
+    ksl_node_set_key(ksl, lnode,
                      nghttp3_ksl_nth_node(ksl, lblk, lblk->n - 1)->key);
   }
 
@@ -401,6 +450,7 @@ static nghttp3_ksl_blk *ksl_merge_node(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
  */
 static void ksl_shift_left(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
   nghttp3_ksl_node *lnode, *rnode;
+  nghttp3_ksl_blk *lblk, *rblk;
   size_t n;
 
   assert(i > 0);
@@ -408,36 +458,37 @@ static void ksl_shift_left(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
   lnode = nghttp3_ksl_nth_node(ksl, blk, i - 1);
   rnode = nghttp3_ksl_nth_node(ksl, blk, i);
 
-  assert(lnode->blk->n < NGHTTP3_KSL_MAX_NBLK);
-  assert(rnode->blk->n > NGHTTP3_KSL_MIN_NBLK);
+  lblk = lnode->blk;
+  rblk = rnode->blk;
 
-  n = (lnode->blk->n + rnode->blk->n + 1) / 2 - lnode->blk->n;
+  assert(lblk->n < NGHTTP3_KSL_MAX_NBLK);
+  assert(rblk->n > NGHTTP3_KSL_MIN_NBLK);
+
+  n = (lblk->n + rblk->n + 1) / 2 - lblk->n;
 
   assert(n > 0);
-  assert(lnode->blk->n <= NGHTTP3_KSL_MAX_NBLK - n);
-  assert(rnode->blk->n >= NGHTTP3_KSL_MIN_NBLK + n);
+  assert(lblk->n <= NGHTTP3_KSL_MAX_NBLK - n);
+  assert(rblk->n >= NGHTTP3_KSL_MIN_NBLK + n);
 
-  memcpy(lnode->blk->nodes + ksl->nodelen * lnode->blk->n, rnode->blk->nodes,
-         ksl->nodelen * n);
+  memcpy(lblk->nodes + ksl->nodelen * lblk->n, rblk->nodes, ksl->nodelen * n);
 
-  lnode->blk->n += (uint32_t)n;
-  rnode->blk->n -= (uint32_t)n;
+  lblk->n += (uint32_t)n;
+  rblk->n -= (uint32_t)n;
 
-  ksl_node_set_key(
-      ksl, lnode,
-      nghttp3_ksl_nth_node(ksl, lnode->blk, lnode->blk->n - 1)->key);
+  ksl_node_set_key(ksl, lnode,
+                   nghttp3_ksl_nth_node(ksl, lblk, lblk->n - 1)->key);
 
-  memmove(rnode->blk->nodes, rnode->blk->nodes + ksl->nodelen * n,
-          ksl->nodelen * rnode->blk->n);
+  memmove(rblk->nodes, rblk->nodes + ksl->nodelen * n, ksl->nodelen * rblk->n);
 }
 
 /*
  * ksl_shift_right moves the last nodes in blk->nodes[i]->blk->nodes
  * to blk->nodes[i + 1]->blk->nodes in a manner that they have the
- * same amount of nodes as much as possible..
+ * same amount of nodes as much as possible.
  */
 static void ksl_shift_right(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
   nghttp3_ksl_node *lnode, *rnode;
+  nghttp3_ksl_blk *lblk, *rblk;
   size_t n;
 
   assert(i < blk->n - 1);
@@ -445,27 +496,27 @@ static void ksl_shift_right(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t i) {
   lnode = nghttp3_ksl_nth_node(ksl, blk, i);
   rnode = nghttp3_ksl_nth_node(ksl, blk, i + 1);
 
-  assert(lnode->blk->n > NGHTTP3_KSL_MIN_NBLK);
-  assert(rnode->blk->n < NGHTTP3_KSL_MAX_NBLK);
+  lblk = lnode->blk;
+  rblk = rnode->blk;
 
-  n = (lnode->blk->n + rnode->blk->n + 1) / 2 - rnode->blk->n;
+  assert(lblk->n > NGHTTP3_KSL_MIN_NBLK);
+  assert(rblk->n < NGHTTP3_KSL_MAX_NBLK);
+
+  n = (lblk->n + rblk->n + 1) / 2 - rblk->n;
 
   assert(n > 0);
-  assert(lnode->blk->n >= NGHTTP3_KSL_MIN_NBLK + n);
-  assert(rnode->blk->n <= NGHTTP3_KSL_MAX_NBLK - n);
+  assert(lblk->n >= NGHTTP3_KSL_MIN_NBLK + n);
+  assert(rblk->n <= NGHTTP3_KSL_MAX_NBLK - n);
 
-  memmove(rnode->blk->nodes + ksl->nodelen * n, rnode->blk->nodes,
-          ksl->nodelen * rnode->blk->n);
+  memmove(rblk->nodes + ksl->nodelen * n, rblk->nodes, ksl->nodelen * rblk->n);
 
-  rnode->blk->n += (uint32_t)n;
-  lnode->blk->n -= (uint32_t)n;
+  rblk->n += (uint32_t)n;
+  lblk->n -= (uint32_t)n;
 
-  memcpy(rnode->blk->nodes, lnode->blk->nodes + ksl->nodelen * lnode->blk->n,
-         ksl->nodelen * n);
+  memcpy(rblk->nodes, lblk->nodes + ksl->nodelen * lblk->n, ksl->nodelen * n);
 
-  ksl_node_set_key(
-      ksl, lnode,
-      nghttp3_ksl_nth_node(ksl, lnode->blk, lnode->blk->n - 1)->key);
+  ksl_node_set_key(ksl, lnode,
+                   nghttp3_ksl_nth_node(ksl, lblk, lblk->n - 1)->key);
 }
 
 /*
@@ -477,25 +528,56 @@ static int key_equal(nghttp3_ksl_compar compar, const nghttp3_ksl_key *lhs,
   return !compar(lhs, rhs) && !compar(rhs, lhs);
 }
 
+int nghttp3_ksl_remove_hint(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
+                            const nghttp3_ksl_it *hint,
+                            const nghttp3_ksl_key *key) {
+  nghttp3_ksl_blk *blk = hint->blk;
+
+  assert(ksl->head);
+
+  if (blk->n <= NGHTTP3_KSL_MIN_NBLK) {
+    return nghttp3_ksl_remove(ksl, it, key);
+  }
+
+  ksl_remove_node(ksl, blk, hint->i);
+
+  --ksl->n;
+
+  if (it) {
+    if (hint->i == blk->n && blk->next) {
+      nghttp3_ksl_it_init(it, ksl, blk->next, 0);
+    } else {
+      nghttp3_ksl_it_init(it, ksl, blk, hint->i);
+    }
+  }
+
+  return 0;
+}
+
 int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
                        const nghttp3_ksl_key *key) {
   nghttp3_ksl_blk *blk = ksl->head;
   nghttp3_ksl_node *node;
   size_t i;
 
+  if (!blk) {
+    return NGHTTP3_ERR_INVALID_ARGUMENT;
+  }
+
   if (!blk->leaf && blk->n == 2 &&
       nghttp3_ksl_nth_node(ksl, blk, 0)->blk->n == NGHTTP3_KSL_MIN_NBLK &&
       nghttp3_ksl_nth_node(ksl, blk, 1)->blk->n == NGHTTP3_KSL_MIN_NBLK) {
-    blk = ksl_merge_node(ksl, ksl->head, 0);
+    blk = ksl_merge_node(ksl, blk, 0);
   }
 
   for (;;) {
-    i = ksl_bsearch(ksl, blk, key, ksl->compar);
+    i = ksl_search(ksl, blk, key, ksl->compar);
 
     if (i == blk->n) {
       if (it) {
         *it = nghttp3_ksl_end(ksl);
       }
+
       return NGHTTP3_ERR_INVALID_ARGUMENT;
     }
 
@@ -504,10 +586,13 @@ int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
         if (it) {
           *it = nghttp3_ksl_end(ksl);
         }
+
         return NGHTTP3_ERR_INVALID_ARGUMENT;
       }
+
       ksl_remove_node(ksl, blk, i);
       --ksl->n;
+
       if (it) {
         if (blk->n == i && blk->next) {
           nghttp3_ksl_it_init(it, ksl, blk->next, 0);
@@ -515,6 +600,7 @@ int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
           nghttp3_ksl_it_init(it, ksl, blk, i);
         }
       }
+
       return 0;
     }
 
@@ -531,6 +617,7 @@ int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
         nghttp3_ksl_nth_node(ksl, blk, i + 1)->blk->n > NGHTTP3_KSL_MIN_NBLK) {
       ksl_shift_left(ksl, blk, i + 1);
       blk = node->blk;
+
       continue;
     }
 
@@ -538,6 +625,7 @@ int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
         nghttp3_ksl_nth_node(ksl, blk, i - 1)->blk->n > NGHTTP3_KSL_MIN_NBLK) {
       ksl_shift_right(ksl, blk, i - 1);
       blk = node->blk;
+
       continue;
     }
 
@@ -552,58 +640,34 @@ int nghttp3_ksl_remove(nghttp3_ksl *ksl, nghttp3_ksl_it *it,
   }
 }
 
-nghttp3_ksl_it nghttp3_ksl_lower_bound(nghttp3_ksl *ksl,
+nghttp3_ksl_it nghttp3_ksl_lower_bound(const nghttp3_ksl *ksl,
                                        const nghttp3_ksl_key *key) {
-  nghttp3_ksl_blk *blk = ksl->head;
-  nghttp3_ksl_it it;
-  size_t i;
-
-  for (;;) {
-    i = ksl_bsearch(ksl, blk, key, ksl->compar);
-
-    if (blk->leaf) {
-      if (i == blk->n && blk->next) {
-        blk = blk->next;
-        i = 0;
-      }
-      nghttp3_ksl_it_init(&it, ksl, blk, i);
-      return it;
-    }
-
-    if (i == blk->n) {
-      /* This happens if descendant has smaller key.  Fast forward to
-         find last node in this subtree. */
-      for (; !blk->leaf; blk = nghttp3_ksl_nth_node(ksl, blk, blk->n - 1)->blk)
-        ;
-      if (blk->next) {
-        blk = blk->next;
-        i = 0;
-      } else {
-        i = blk->n;
-      }
-      nghttp3_ksl_it_init(&it, ksl, blk, i);
-      return it;
-    }
-    blk = nghttp3_ksl_nth_node(ksl, blk, i)->blk;
-  }
+  return nghttp3_ksl_lower_bound_compar(ksl, key, ksl->compar);
 }
 
-nghttp3_ksl_it nghttp3_ksl_lower_bound_compar(nghttp3_ksl *ksl,
+nghttp3_ksl_it nghttp3_ksl_lower_bound_compar(const nghttp3_ksl *ksl,
                                               const nghttp3_ksl_key *key,
                                               nghttp3_ksl_compar compar) {
   nghttp3_ksl_blk *blk = ksl->head;
   nghttp3_ksl_it it;
   size_t i;
 
+  if (!blk) {
+    nghttp3_ksl_it_init(&it, ksl, &null_blk, 0);
+    return it;
+  }
+
   for (;;) {
-    i = ksl_bsearch(ksl, blk, key, compar);
+    i = ksl_search(ksl, blk, key, compar);
 
     if (blk->leaf) {
       if (i == blk->n && blk->next) {
         blk = blk->next;
         i = 0;
       }
+
       nghttp3_ksl_it_init(&it, ksl, blk, i);
+
       return it;
     }
 
@@ -612,15 +676,19 @@ nghttp3_ksl_it nghttp3_ksl_lower_bound_compar(nghttp3_ksl *ksl,
          find last node in this subtree. */
       for (; !blk->leaf; blk = nghttp3_ksl_nth_node(ksl, blk, blk->n - 1)->blk)
         ;
+
       if (blk->next) {
         blk = blk->next;
         i = 0;
       } else {
         i = blk->n;
       }
+
       nghttp3_ksl_it_init(&it, ksl, blk, i);
+
       return it;
     }
+
     blk = nghttp3_ksl_nth_node(ksl, blk, i)->blk;
   }
 }
@@ -631,8 +699,10 @@ void nghttp3_ksl_update_key(nghttp3_ksl *ksl, const nghttp3_ksl_key *old_key,
   nghttp3_ksl_node *node;
   size_t i;
 
+  assert(ksl->head);
+
   for (;;) {
-    i = ksl_bsearch(ksl, blk, old_key, ksl->compar);
+    i = ksl_search(ksl, blk, old_key, ksl->compar);
 
     assert(i < blk->n);
     node = nghttp3_ksl_nth_node(ksl, blk, i);
@@ -640,6 +710,7 @@ void nghttp3_ksl_update_key(nghttp3_ksl *ksl, const nghttp3_ksl_key *old_key,
     if (blk->leaf) {
       assert(key_equal(ksl->compar, (nghttp3_ksl_key *)node->key, old_key));
       ksl_node_set_key(ksl, node, new_key);
+
       return;
     }
 
@@ -652,7 +723,26 @@ void nghttp3_ksl_update_key(nghttp3_ksl *ksl, const nghttp3_ksl_key *old_key,
   }
 }
 
-static void ksl_print(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t level) {
+size_t nghttp3_ksl_len(const nghttp3_ksl *ksl) { return ksl->n; }
+
+void nghttp3_ksl_clear(nghttp3_ksl *ksl) {
+  if (!ksl->head) {
+    return;
+  }
+
+#ifdef NOMEMPOOL
+  ksl_free_blk(ksl, ksl->head);
+#endif /* defined(NOMEMPOOL) */
+
+  ksl->front = ksl->back = ksl->head = NULL;
+  ksl->n = 0;
+
+  nghttp3_objalloc_clear(&ksl->blkalloc);
+}
+
+#ifndef WIN32
+static void ksl_print(const nghttp3_ksl *ksl, nghttp3_ksl_blk *blk,
+                      size_t level) {
   size_t i;
   nghttp3_ksl_node *node;
 
@@ -663,7 +753,9 @@ static void ksl_print(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t level) {
       node = nghttp3_ksl_nth_node(ksl, blk, i);
       fprintf(stderr, " %" PRId64, *(int64_t *)(void *)node->key);
     }
+
     fprintf(stderr, "\n");
+
     return;
   }
 
@@ -672,39 +764,36 @@ static void ksl_print(nghttp3_ksl *ksl, nghttp3_ksl_blk *blk, size_t level) {
   }
 }
 
-size_t nghttp3_ksl_len(nghttp3_ksl *ksl) { return ksl->n; }
-
-void nghttp3_ksl_clear(nghttp3_ksl *ksl) {
-  size_t i;
-  nghttp3_ksl_blk *head;
-
-  if (!ksl->head->leaf) {
-    for (i = 0; i < ksl->head->n; ++i) {
-      ksl_free_blk(ksl, nghttp3_ksl_nth_node(ksl, ksl->head, i)->blk);
-    }
+void nghttp3_ksl_print(const nghttp3_ksl *ksl) {
+  if (!ksl->head) {
+    return;
   }
 
-  ksl->front = ksl->back = ksl->head;
-  ksl->n = 0;
-
-  head = ksl->head;
-
-  head->next = head->prev = NULL;
-  head->n = 0;
-  head->leaf = 1;
+  ksl_print(ksl, ksl->head, 0);
 }
-
-void nghttp3_ksl_print(nghttp3_ksl *ksl) { ksl_print(ksl, ksl->head, 0); }
+#endif /* !defined(WIN32) */
 
 nghttp3_ksl_it nghttp3_ksl_begin(const nghttp3_ksl *ksl) {
   nghttp3_ksl_it it;
-  nghttp3_ksl_it_init(&it, ksl, ksl->front, 0);
+
+  if (ksl->head) {
+    nghttp3_ksl_it_init(&it, ksl, ksl->front, 0);
+  } else {
+    nghttp3_ksl_it_init(&it, ksl, &null_blk, 0);
+  }
+
   return it;
 }
 
 nghttp3_ksl_it nghttp3_ksl_end(const nghttp3_ksl *ksl) {
   nghttp3_ksl_it it;
-  nghttp3_ksl_it_init(&it, ksl, ksl->back, ksl->back->n);
+
+  if (ksl->head) {
+    nghttp3_ksl_it_init(&it, ksl, ksl->back, ksl->back->n);
+  } else {
+    nghttp3_ksl_it_init(&it, ksl, &null_blk, 0);
+  }
+
   return it;
 }
 
@@ -713,11 +802,6 @@ void nghttp3_ksl_it_init(nghttp3_ksl_it *it, const nghttp3_ksl *ksl,
   it->ksl = ksl;
   it->blk = blk;
   it->i = i;
-}
-
-void *nghttp3_ksl_it_get(const nghttp3_ksl_it *it) {
-  assert(it->i < it->blk->n);
-  return nghttp3_ksl_nth_node(it->ksl, it->blk, it->i)->data;
 }
 
 void nghttp3_ksl_it_prev(nghttp3_ksl_it *it) {
@@ -744,6 +828,6 @@ int nghttp3_ksl_range_compar(const nghttp3_ksl_key *lhs,
 int nghttp3_ksl_range_exclusive_compar(const nghttp3_ksl_key *lhs,
                                        const nghttp3_ksl_key *rhs) {
   const nghttp3_range *a = lhs, *b = rhs;
-  return a->begin < b->begin &&
-         !(nghttp3_max(a->begin, b->begin) < nghttp3_min(a->end, b->end));
+  return a->begin < b->begin && !(nghttp3_max_uint64(a->begin, b->begin) <
+                                  nghttp3_min_uint64(a->end, b->end));
 }

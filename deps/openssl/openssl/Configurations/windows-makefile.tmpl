@@ -294,7 +294,7 @@ RCOUTFLAG={- $target{rcoutflag} -}$(OSSL_EMPTY)
 
 CNF_ASFLAGS={- join(' ', $target{asflags} || (),
                          @{$config{asflags}}) -}
-CNF_CPPFLAGS={- our $cppfags2 =
+CNF_CPPFLAGS={- our $cppflags2 =
                     join(' ', $target{cppflags} || (),
                               (map { '-D'.quotify1($_) } @{$target{defines}},
                                                          @{$config{defines}}),
@@ -440,6 +440,8 @@ all: build_sw build_docs
 
 test: tests
 {- dependmagic('tests'); -}: build_programs_nodep build_modules_nodep copy-utils
+	$(MAKE) /$(MAKEFLAGS) run_tests
+run_tests:
 	@{- output_off() if $disabled{tests}; "\@rem" -}
 	cmd /C "set "SRCTOP=$(SRCDIR)" & set "BLDTOP=$(BLDDIR)" & set "PERL=$(PERL)" & set "FIPSKEY=$(FIPSKEY)" & "$(PERL)" "$(SRCDIR)\test\run_tests.pl" $(TESTS)"
 	@{- if ($disabled{tests}) { output_on(); } else { output_off(); } "" -}
@@ -478,10 +480,11 @@ clean: libclean
 	-rd /Q /S test\test-runs
 
 distclean: clean
+	-del /Q /F include\openssl\configuration.h
 	-del /Q /F configdata.pm
 	-del /Q /F makefile
 
-depend:
+depend: makefile
 	@ {- output_off() if $disabled{makedepend}; "\@rem" -}
 	@ "$(PERL)" "$(SRCDIR)\util\add-depends.pl" "{- $target{makedep_scheme} -}"
 	@ {- output_on() if $disabled{makedepend}; "\@rem" -}
@@ -499,8 +502,8 @@ uninstall_docs: uninstall_html_docs
 {- output_off() if $disabled{fips}; "" -}
 install_fips: build_sw $(INSTALL_FIPSMODULECONF)
 #	@[ -n "$(INSTALLTOP)" ] || (echo INSTALLTOP should not be empty; exit 1)
-	@$(PERL) $(SRCDIR)\util\mkdir-p.pl $(MODULESDIR)
-	@$(PERL) $(SRCDIR)\util\mkdir-p.pl $(OPENSSLDIR)
+	@"$(PERL)" "$(SRCDIR)\util\mkdir-p.pl" "$(MODULESDIR)"
+	@"$(PERL)" "$(SRCDIR)\util\mkdir-p.pl" "$(OPENSSLDIR)"
 	@$(ECHO) "*** Installing FIPS module"
 	@$(ECHO) "install $(INSTALL_FIPSMODULE) -> $(MODULESDIR)\$(FIPSMODULENAME)"
 	@"$(PERL)" "$(SRCDIR)\util\copy.pl" "$(INSTALL_FIPSMODULE)" "$(MODULESDIR)"
@@ -643,13 +646,23 @@ uninstall_image_docs:
 
 copy-utils: $(BLDDIR)\apps\openssl.cnf
 
-$(BLDDIR)\apps\openssl.cnf: configdata.pm
+$(BLDDIR)\apps\openssl.cnf: makefile
 	@if NOT EXIST "$(BLDDIR)\apps" mkdir "$(BLDDIR)\apps"
 	@if NOT "$(SRCDIR)"=="$(BLDDIR)" copy "$(SRCDIR)\apps\$(@F)" "$(BLDDIR)\apps"
 
 # Building targets ###################################################
 
-configdata.pm: "$(SRCDIR)\Configure" {- join(" ", map { '"'.$_.'"' } @{$config{build_file_templates}}, @{$config{build_infos}}, @{$config{conf_files}}) -}
+makefile: configdata.pm {- join(" ", map { '"'.$_.'"' } @{$config{build_file_templates}}) -}
+	@$(ECHO) "Detected changed: $?"
+	"$(PERL)" configdata.pm
+	@$(ECHO) "**************************************************"
+	@$(ECHO) "***                                            ***"
+	@$(ECHO) "***   Please run the same make command again   ***"
+	@$(ECHO) "***                                            ***"
+	@$(ECHO) "**************************************************"
+	@exit 1
+
+configdata.pm: "$(SRCDIR)\Configure" {- join(" ", map { '"'.$_.'"' } @{$config{build_infos}}, @{$config{conf_files}}) -}
 	@$(ECHO) "Detected changed: $?"
 	"$(PERL)" configdata.pm -r
 	@$(ECHO) "**************************************************"
@@ -731,12 +744,13 @@ EOF
                               rel2abs($config{builddir}));
           my $ord_ver = $args{intent} eq 'lib' ? ' --version $(VERSION_NUMBER)' : '';
           my $ord_name =
-              $args{generator}->[1] || platform->dsoname($args{product});
+              $args{generator}->[1] || basename(platform->dsoname($args{product}));
           return <<"EOF";
 $target: $gen0 $deps $mkdef
-	"\$(PERL)" $mkdef$ord_ver --ordinals $gen0 --name $ord_name --OS windows > $target
+	"\$(PERL)" "$mkdef"$ord_ver --type $args{intent} --ordinals $gen0 --name $ord_name --OS windows > $target
 EOF
-      } elsif (platform->isasm($args{src})) {
+      } elsif (platform->isasm($args{src})
+               || platform->iscppasm($args{src})) {
           #
           # Assembler generator
           #
@@ -746,12 +760,14 @@ EOF
               dso => '$(DSO_CFLAGS) $(DSO_CPPFLAGS)',
               bin => '$(BIN_CFLAGS) $(BIN_CPPFLAGS)'
           } -> {$args{intent}};
-          my $target = platform->asm($args{src});
+          my $target = platform->isasm($args{src})
+                       ? platform->asm($args{src})
+                       : $args{src};
 
           my $generator;
           if ($gen0 =~ /\.pl$/) {
-              $generator = '"$(PERL)"'.$gen_incs.' '.$gen0.$gen_args
-                  .' "$(PERLASM_SCHEME)"'.$incs.' '.$cppflags.$defs.' $(PROCESSSOR)';
+              $generator = '"$(PERL)"'.$gen_incs.' "'.$gen0.'"'.$gen_args
+                  .' "$(PERLASM_SCHEME)"'.$incs.' '.$cppflags.$defs.' $(PROCESSOR)';
           } elsif ($gen0 =~ /\.S$/) {
               $generator = undef;
           } else {
@@ -759,18 +775,6 @@ EOF
           }
 
           if (defined($generator)) {
-              # If the target is named foo.S in build.info, we want to
-              # end up generating foo.s in two steps.
-              if ($args{src} =~ /\.S$/) {
-                   return <<"EOF";
-$target: "$gen0" $deps
-	cmd /C "set "ASM=\$(AS)" & $generator \$@.S"
-	\$(CPP) $incs $cppflags $defs \$@.S > \$@.i
-	move /Y \$@.i \$@
-        del /Q \$@.S
-EOF
-              }
-              # Otherwise....
               return <<"EOF";
 $target: "$gen0" $deps
 	cmd /C "set "ASM=\$(AS)" & $generator \$@"
@@ -807,7 +811,7 @@ EOF
           $gen0 = platform->bin($gen0);
           return <<"EOF";
 $args{src}: $gen0 $deps "\$(BLDDIR)\\util\\wrap.pl"
-	"\$(PERL)" "\$(BLDDIR)\\util\\wrap.pl" $gen0$gen_args > \$@
+	"\$(PERL)" "\$(BLDDIR)\\util\\wrap.pl" "$gen0"$gen_args > \$@
 EOF
       } else {
           #
@@ -815,7 +819,7 @@ EOF
           #
           return <<"EOF";
 $args{src}: "$gen0" $deps
-	"\$(PERL)"$gen_incs $gen0$gen_args > \$@
+	"\$(PERL)"$gen_incs "$gen0"$gen_args > \$@
 EOF
       }
   }

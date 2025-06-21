@@ -13,8 +13,8 @@
 #include "plurrule_impl.h"
 #include "number_types.h"
 
-U_NAMESPACE_BEGIN namespace number {
-namespace impl {
+U_NAMESPACE_BEGIN
+namespace number::impl {
 
 // Forward-declare (maybe don't want number_utils.h included here):
 class DecNum;
@@ -36,7 +36,7 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     DecimalQuantity(const DecimalQuantity &other);
 
     /** Move constructor. */
-    DecimalQuantity(DecimalQuantity &&src) U_NOEXCEPT;
+    DecimalQuantity(DecimalQuantity &&src) noexcept;
 
     DecimalQuantity();
 
@@ -50,7 +50,15 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     DecimalQuantity &operator=(const DecimalQuantity &other);
 
     /** Move assignment */
-    DecimalQuantity &operator=(DecimalQuantity&& src) U_NOEXCEPT;
+    DecimalQuantity &operator=(DecimalQuantity&& src) noexcept;
+
+    /**
+     * If the minimum integer digits are greater than `minInt`,
+     * sets it to `minInt`.
+     *
+     * @param minInt The minimum number of integer digits.
+     */
+    void decreaseMinIntegerTo(int32_t minInt);
 
     /**
      * Sets the minimum integer digits that this {@link DecimalQuantity} should generate.
@@ -58,7 +66,7 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      *
      * @param minInt The minimum number of integer digits.
      */
-    void setMinInteger(int32_t minInt);
+    void increaseMinIntegerTo(int32_t minInt);
 
     /**
      * Sets the minimum fraction digits that this {@link DecimalQuantity} should generate.
@@ -81,11 +89,15 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      *
      * <p>If rounding to a power of ten, use the more efficient {@link #roundToMagnitude} instead.
      *
-     * @param roundingIncrement The increment to which to round.
+     * @param increment The increment to which to round.
+     * @param magnitude The power of 10 to which to round.
      * @param roundingMode The {@link RoundingMode} to use if rounding is necessary.
      */
-    void roundToIncrement(double roundingIncrement, RoundingMode roundingMode,
-                          UErrorCode& status);
+    void roundToIncrement(
+        uint64_t increment,
+        digits_t magnitude,
+        RoundingMode roundingMode,
+        UErrorCode& status);
 
     /** Removes all fraction digits. */
     void truncate();
@@ -141,6 +153,13 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     bool adjustMagnitude(int32_t delta);
 
     /**
+     * Scales the number such that the least significant nonzero digit is at magnitude 0.
+     *
+     * @return The previous magnitude of the least significant digit.
+     */
+    int32_t adjustToZeroScale();
+
+    /**
      * @return The power of ten corresponding to the most significant nonzero digit.
      * The number must not be zero.
      */
@@ -184,10 +203,10 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     Signum signum() const;
 
     /** @return Whether the value represented by this {@link DecimalQuantity} is infinite. */
-    bool isInfinite() const U_OVERRIDE;
+    bool isInfinite() const override;
 
     /** @return Whether the value represented by this {@link DecimalQuantity} is not a number. */
-    bool isNaN() const U_OVERRIDE;
+    bool isNaN() const override;
 
     /**  
      * Note: this method incorporates the value of {@code exponent}
@@ -234,6 +253,9 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     /** Internal method if the caller already has a DecNum. */
     DecimalQuantity &setToDecNum(const DecNum& n, UErrorCode& status);
 
+    /** Returns a DecimalQuantity after parsing the input string. */
+    static DecimalQuantity fromExponentString(UnicodeString n, UErrorCode& status);
+
     /**
      * Appends a digit, optionally with one or more leading zeros, to the end of the value represented
      * by this DecimalQuantity.
@@ -253,9 +275,9 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
      */
     void appendDigit(int8_t value, int32_t leadingZeros, bool appendAsInteger);
 
-    double getPluralOperand(PluralOperand operand) const U_OVERRIDE;
+    double getPluralOperand(PluralOperand operand) const override;
 
-    bool hasIntegerValue() const U_OVERRIDE;
+    bool hasIntegerValue() const override;
 
     /**
      * Gets the digit at the specified magnitude. For example, if the represented number is 12.3,
@@ -314,6 +336,10 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
 
     /** Returns the string without exponential notation. Slightly slower than toScientificString(). */
     UnicodeString toPlainString() const;
+
+    /** Returns the string using ASCII digits and using exponential notation for non-zero
+    exponents, following the UTS 35 specification for plural rule samples. */
+    UnicodeString toExponentString() const;
 
     /** Visible for testing */
     inline bool isUsingBytes() { return usingBytes; }
@@ -518,6 +544,8 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
 
     void _setToDecNum(const DecNum& dn, UErrorCode& status);
 
+    static int32_t getVisibleFractionCount(UnicodeString value);
+
     void convertToAccurateDouble();
 
     /** Ensure that a byte array of at least 40 digits is allocated. */
@@ -529,8 +557,7 @@ class U_I18N_API DecimalQuantity : public IFixedDecimal, public UMemory {
     void switchStorage();
 };
 
-} // namespace impl
-} // namespace number
+} // namespace number::impl
 U_NAMESPACE_END
 
 

@@ -74,9 +74,11 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
             !properties.currencyPluralInfo.fPtr.isNull() ||
             !properties.currencyUsage.isNull() ||
             warehouse.affixProvider.get().hasCurrencySign());
-    CurrencyUnit currency = resolveCurrency(properties, locale, status);
-    UCurrencyUsage currencyUsage = properties.currencyUsage.getOrDefault(UCURR_USAGE_STANDARD);
+    CurrencyUnit currency;
+    UCurrencyUsage currencyUsage;
     if (useCurrency) {
+        currency = resolveCurrency(properties, locale, status);
+        currencyUsage = properties.currencyUsage.getOrDefault(UCURR_USAGE_STANDARD);
         // NOTE: Slicing is OK.
         macros.unit = currency; // NOLINT
     }
@@ -129,12 +131,14 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
     }
     Precision precision;
     if (!properties.currencyUsage.isNull()) {
+        U_ASSERT(useCurrency);
         precision = Precision::constructCurrency(currencyUsage).withCurrency(currency);
     } else if (roundingIncrement != 0.0) {
         if (PatternStringUtils::ignoreRoundingIncrement(roundingIncrement, maxFrac)) {
             precision = Precision::constructFraction(minFrac, maxFrac);
         } else {
-            precision = Precision::constructIncrement(roundingIncrement, minFrac);
+            // Convert the double increment to an integer increment
+            precision = Precision::increment(roundingIncrement).withMinFraction(minFrac);
         }
     } else if (explicitMinMaxSig) {
         minSig = minSig < 1 ? 1 : minSig > kMaxIntFracSig ? kMaxIntFracSig : minSig;
@@ -255,8 +259,6 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
         } else {
             macros.notation = Notation::compactShort();
         }
-        // Do not forward the affix provider.
-        macros.affixProvider = nullptr;
     }
 
     /////////////////
@@ -277,7 +279,7 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
         exportedProperties->maximumIntegerDigits = maxInt == -1 ? INT32_MAX : maxInt;
 
         Precision rounding_;
-        if (precision.fType == Precision::PrecisionType::RND_CURRENCY) {
+        if (useCurrency && precision.fType == Precision::PrecisionType::RND_CURRENCY) {
             rounding_ = precision.withCurrency(currency, status);
         } else {
             rounding_ = precision;
@@ -293,9 +295,14 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
         } else if (rounding_.fType == Precision::PrecisionType::RND_INCREMENT
                 || rounding_.fType == Precision::PrecisionType::RND_INCREMENT_ONE
                 || rounding_.fType == Precision::PrecisionType::RND_INCREMENT_FIVE) {
-            increment_ = rounding_.fUnion.increment.fIncrement;
             minFrac_ = rounding_.fUnion.increment.fMinFrac;
+            // If incrementRounding is used, maxFrac is set equal to minFrac
             maxFrac_ = rounding_.fUnion.increment.fMinFrac;
+            // Convert the integer increment to a double
+            DecimalQuantity dq;
+            dq.setToLong(rounding_.fUnion.increment.fIncrement);
+            dq.adjustMagnitude(rounding_.fUnion.increment.fIncrementMagnitude);
+            increment_ = dq.toDouble();
         } else if (rounding_.fType == Precision::PrecisionType::RND_SIGNIFICANT) {
             minSig_ = rounding_.fUnion.fracSig.fMinSig;
             maxSig_ = rounding_.fUnion.fracSig.fMaxSig;

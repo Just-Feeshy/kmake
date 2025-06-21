@@ -53,23 +53,28 @@ EVP_RAND                                datatype
 EVP_RAND_CTX                            datatype
 EVP_SIGNATURE                           datatype
 GEN_SESSION_CB                          datatype
-OPENSSL_Applink                         external
-OSSL_LIB_CTX                            datatype
 NAMING_AUTHORITY                        datatype
+OPENSSL_Applink                         external
+OSSL_ALGORITHM                          datatype
+OSSL_CALLBACK                           datatype
 OSSL_DECODER                            datatype
 OSSL_DECODER_CTX                        datatype
 OSSL_DECODER_CONSTRUCT                  datatype
 OSSL_DECODER_CLEANUP                    datatype
 OSSL_DECODER_INSTANCE                   datatype
-OSSL_HTTP_bio_cb_t                      datatype
-OSSL_PARAM                              datatype
-OSSL_PROVIDER                           datatype
+OSSL_DISPATCH                           datatype
 OSSL_ENCODER                            datatype
 OSSL_ENCODER_CTX                        datatype
 OSSL_ENCODER_CONSTRUCT                  datatype
 OSSL_ENCODER_CLEANUP                    datatype
 OSSL_ENCODER_INSTANCE                   datatype
+OSSL_HTTP_bio_cb_t                      datatype
 OSSL_HTTP_REQ_CTX                       datatype
+OSSL_ITEM                               datatype
+OSSL_LIB_CTX                            datatype
+OSSL_PARAM                              datatype
+OSSL_PASSPHRASE_CALLBACK                datatype
+OSSL_PROVIDER                           datatype
 OSSL_STORE_CTX                          datatype
 OSSL_STORE_INFO                         datatype
 OSSL_STORE_LOADER                       datatype
@@ -108,6 +113,7 @@ UI_METHOD                               datatype
 UI_STRING                               datatype
 UI_string_types                         datatype
 UI_string_types                         datatype
+X509_ATTRIBUTE                          datatype
 X509_STORE_CTX_cert_crl_fn              datatype
 X509_STORE_CTX_check_crl_fn             datatype
 X509_STORE_CTX_check_issued_fn          datatype
@@ -137,12 +143,17 @@ custom_ext_free_cb                      datatype
 custom_ext_parse_cb                     datatype
 pem_password_cb                         datatype
 ssl_ct_validation_cb                    datatype
-OSSL_ENCRYPTION_LEVEL                   datatype
-SSL_QUIC_METHOD                         datatype
 #
 ASN1_BIT_STRING_digest                  define
 BIO_append_filename                     define
 BIO_destroy_bio_pair                    define
+BIO_ctrl_dgram_connect                  define
+BIO_ctrl_set_connected                  define
+BIO_dgram_get_mtu_overhead              define
+BIO_dgram_get_peer                      define
+BIO_dgram_set_peer                      define
+BIO_dgram_recv_timedout                 define
+BIO_dgram_send_timedout                 define
 BIO_do_accept                           define
 BIO_do_connect                          define
 BIO_do_handshake                        define
@@ -364,7 +375,7 @@ OPENSSL_MSTR                            define
 OPENSSL_MSTR_HELPER                     define
 OPENSSL_VERSION_MAJOR                   define
 OPENSSL_VERSION_MINOR                   define
-OPENSSL_VERSION_NUMBER                  define deprecated 3.0.0
+OPENSSL_VERSION_NUMBER                  define
 OPENSSL_VERSION_PATCH                   define
 OPENSSL_VERSION_PRE_RELEASE             define
 OPENSSL_VERSION_PREREQ                  define
@@ -461,6 +472,8 @@ SSL_CTX_decrypt_session_ticket_fn       define
 SSL_CTX_disable_ct                      define
 SSL_CTX_generate_session_ticket_fn      define
 SSL_CTX_get0_chain_certs                define
+SSL_CTX_get0_chain_cert_store           define
+SSL_CTX_get0_verify_cert_store          define
 SSL_CTX_get_default_read_ahead          define
 SSL_CTX_get_extra_chain_certs           define
 SSL_CTX_get_extra_chain_certs_only      define
@@ -533,6 +546,8 @@ SSL_clear_mode                          define
 SSL_disable_ct                          define
 SSL_get0_chain_certs                    define
 SSL_get0_session                        define
+SSL_get0_chain_cert_store               define
+SSL_get0_verify_cert_store              define
 SSL_get1_curves                         define
 SSL_get1_groups                         define
 SSL_get_cipher                          define
@@ -670,3 +685,4 @@ EVP_PKEY_security_bits                  define
 EVP_PKEY_size                           define
 EVP_PKEY_id                             define
 EVP_PKEY_base_id                        define
+SSL_set_retry_verify                    define

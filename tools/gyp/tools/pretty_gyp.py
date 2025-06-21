@@ -7,9 +7,8 @@
 """Pretty-prints the contents of a GYP file."""
 
 
-import sys
 import re
-
+import sys
 
 # Regex to remove comments when we're counting braces.
 COMMENT_RE = re.compile(r"\s*#.*")
@@ -90,7 +89,7 @@ def count_braces(line):
   """
     open_braces = ["[", "(", "{"]
     close_braces = ["]", ")", "}"]
-    closing_prefix_re = re.compile(r"(.*?[^\s\]\}\)]+.*?)([\]\}\)],?)\s*$")
+    closing_prefix_re = re.compile(r"[^\s\]\}\)]\s*[\]\}\)]+,?\s*$")
     cnt = 0
     stripline = COMMENT_RE.sub(r"", line)
     stripline = QUOTE_RE.sub(r"''", stripline)
@@ -136,7 +135,7 @@ def prettyprint_input(lines):
                 else:
                     print(" " * (basic_offset * indent) + line)
             else:
-                print("")
+                print()
 
 
 def main():

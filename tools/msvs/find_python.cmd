@@ -17,6 +17,13 @@ for %%k in ( "HKCU\Software", "HKLM\SOFTWARE", "HKLM\Software\Wow6432Node") do (
   if not errorlevel 1 goto :found-python
 )
 
+:: Check for pyenv-win installation using pyenv which python
+for /f "tokens=*" %%i in ('pyenv which python 2^>nul') do set p=%%i
+if defined p (
+    for /f "tokens=*" %%j in ('"%p%" --version') do set python_version=%%j
+    goto :found-python
+)
+
 goto :no-python
 
 
@@ -46,7 +53,7 @@ exit /b 1
 
 :found-python
 echo Python found in %p%\python.exe
-call :check-python %p%\python.exe
+call :check-python "%p%\python.exe"
 if errorlevel 1 goto :no-python
 endlocal ^
   & set "pt=%p%" ^
@@ -57,7 +64,7 @@ set "need_path_ext="
 exit /b 0
 
 :check-python
-%~1 -V
+%1 -V
 :: 9009 means error file not found
 if %errorlevel% equ 9009 (
   echo Not an executable Python program

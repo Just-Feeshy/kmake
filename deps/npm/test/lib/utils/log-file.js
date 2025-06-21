@@ -1,15 +1,16 @@
 const t = require('tap')
-const _fs = require('fs')
+const _fs = require('node:fs')
 const fs = _fs.promises
-const path = require('path')
-const os = require('os')
+const path = require('node:path')
+const os = require('node:os')
 const fsMiniPass = require('fs-minipass')
-const rimraf = require('rimraf')
+const tmock = require('../../fixtures/tmock')
 const LogFile = require('../../../lib/utils/log-file.js')
-const { cleanCwd } = require('../../fixtures/clean-snapshot')
+const { cleanCwd, cleanDate } = require('../../fixtures/clean-snapshot')
 
-t.cleanSnapshot = (path) => cleanCwd(path)
+t.cleanSnapshot = (s) => cleanDate(cleanCwd(s))
 
+const getId = (d = new Date()) => d.toISOString().replace(/[.:]/g, '_')
 const last = arr => arr[arr.length - 1]
 const range = (n) => Array.from(Array(n).keys())
 const makeOldLogs = (count, oldStyle) => {
@@ -19,7 +20,7 @@ const makeOldLogs = (count, oldStyle) => {
   return range(oldStyle ? count : (count / 2)).reduce((acc, i) => {
     const cloneDate = new Date(d.getTime())
     cloneDate.setSeconds(i)
-    const dateId = LogFile.logId(cloneDate)
+    const dateId = getId(cloneDate)
     if (oldStyle) {
       acc[`${dateId}-debug.log`] = 'hello'
     } else {
@@ -41,18 +42,27 @@ const cleanErr = (message) => {
 
 const loadLogFile = async (t, { buffer = [], mocks, testdir = {}, ...options } = {}) => {
   const root = t.testdir(testdir)
-  const MockLogFile = t.mock('../../../lib/utils/log-file.js', mocks)
+
+  const MockLogFile = tmock(t, '{LIB}/utils/log-file.js', mocks)
   const logFile = new MockLogFile(Object.keys(options).length ? options : undefined)
+
+  // Create a fake public method since there is not one on logFile anymore
+  logFile.log = (...b) => process.emit('log', ...b)
   buffer.forEach((b) => logFile.log(...b))
-  await logFile.load({ dir: root, ...options })
+
+  const id = getId()
+  await logFile.load({ path: path.join(root, `${id}-`), ...options })
+
   t.teardown(() => logFile.off())
   return {
     root,
     logFile,
     LogFile,
     readLogs: async () => {
-      const logDir = await fs.readdir(root)
-      const logFiles = logDir.map((f) => path.join(root, f))
+      const logDir = await fs.readdir(root, { withFileTypes: true })
+      const logFiles = logDir
+        .filter(f => f.isFile())
+        .map((f) => path.join(root, f.name))
         .filter((f) => _fs.existsSync(f))
       return Promise.all(logFiles.map(async (f) => {
         const content = await fs.readFile(f, 'utf8')
@@ -116,12 +126,12 @@ t.test('max files per process', async t => {
   }
 
   for (const i of range(5)) {
-    logFile.log('verbose', `log ${i}`)
+    logFile.log('verbose', `ignored after maxlogs hit ${i}`)
   }
 
   const logs = await readLogs()
   t.equal(logs.length, maxFilesPerProcess, 'total log files')
-  t.equal(last(last(logs).logs), '49 error log 49')
+  t.match(last(last(logs).logs), /49 error log \d+/)
 })
 
 t.test('stream error', async t => {
@@ -157,7 +167,7 @@ t.test('initial stream error', async t => {
     mocks: {
       'fs-minipass': {
         WriteStreamSync: class {
-          constructor (...args) {
+          constructor () {
             throw new Error('no stream')
           }
         },
@@ -182,8 +192,7 @@ t.test('turns off', async t => {
   logFile.load()
 
   const logs = await readLogs()
-  t.equal(logs.length, 1)
-  t.equal(logs[0].logs[0], '0 error test')
+  t.match(last(last(logs).logs), /^\d+ error test$/)
 })
 
 t.test('cleans logs', async t => {
@@ -197,8 +206,24 @@ t.test('cleans logs', async t => {
   t.equal(logs.length, logsMax + 1)
 })
 
+t.test('cleans logs even when find folder inside logs folder', async t => {
+  const logsMax = 5
+  const { readLogs } = await loadLogFile(t, {
+    logsMax,
+    testdir: {
+      ...makeOldLogs(10),
+      ignore_folder: {
+        'ignored-file.txt': 'hello',
+      },
+    },
+  })
+
+  const logs = await readLogs()
+  t.equal(logs.length, logsMax + 1)
+})
+
 t.test('doesnt clean current log by default', async t => {
-  const logsMax = 0
+  const logsMax = 1
   const { readLogs, logFile } = await loadLogFile(t, {
     logsMax,
     testdir: makeOldLogs(10),
@@ -207,7 +232,6 @@ t.test('doesnt clean current log by default', async t => {
   logFile.log('error', 'test')
 
   const logs = await readLogs()
-  t.equal(logs.length, 1)
   t.match(last(logs).content, /\d+ error test/)
 })
 
@@ -221,8 +245,7 @@ t.test('negative logs max', async t => {
   logFile.log('error', 'test')
 
   const logs = await readLogs()
-  t.equal(logs.length, 1)
-  t.match(last(logs).content, /\d+ error test/)
+  t.equal(logs.length, 0)
 })
 
 t.test('doesnt need to clean', async t => {
@@ -237,27 +260,12 @@ t.test('doesnt need to clean', async t => {
   t.equal(logs.length, oldLogs + 1)
 })
 
-t.test('glob error', async t => {
-  const { readLogs } = await loadLogFile(t, {
-    logsMax: 5,
-    mocks: {
-      glob: () => {
-        throw new Error('bad glob')
-      },
-    },
-  })
-
-  const logs = await readLogs()
-  t.equal(logs.length, 1)
-  t.match(last(logs).content, /error cleaning log files .* bad glob/)
-})
-
 t.test('cleans old style logs too', async t => {
   const logsMax = 5
   const oldLogs = 10
   const { readLogs } = await loadLogFile(t, {
     logsMax,
-    testdir: makeOldLogs(oldLogs, false),
+    testdir: makeOldLogs(oldLogs, true),
   })
 
   const logs = await readLogs()
@@ -272,12 +280,15 @@ t.test('rimraf error', async t => {
     logsMax,
     testdir: makeOldLogs(oldLogs),
     mocks: {
-      rimraf: (...args) => {
-        if (count >= 3) {
-          throw new Error('bad rimraf')
-        }
-        count++
-        return rimraf(...args)
+      'node:fs/promises': {
+        readdir: fs.readdir,
+        rm: async (...args) => {
+          if (count >= 3) {
+            throw new Error('bad rimraf')
+          }
+          count++
+          return fs.rm(...args)
+        },
       },
     },
   })
@@ -304,7 +315,7 @@ t.test('delete log file while open', async t => {
 })
 
 t.test('snapshot', async t => {
-  const { logFile, readLogs } = await loadLogFile(t)
+  const { logFile, readLogs } = await loadLogFile(t, { logsMax: 10 })
 
   logFile.log('error', '', 'no prefix')
   logFile.log('error', 'prefix', 'with prefix')

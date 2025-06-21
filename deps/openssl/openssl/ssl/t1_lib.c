@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -23,6 +23,7 @@
 #include "internal/nelem.h"
 #include "internal/sizes.h"
 #include "internal/tlsgroups.h"
+#include "internal/cryptlib.h"
 #include "ssl_local.h"
 #include <openssl/ct.h>
 
@@ -343,6 +344,7 @@ static int add_provider_groups(const OSSL_PARAM params[], void *data)
      * it.
      */
     ret = 1;
+    ERR_set_mark();
     keymgmt = EVP_KEYMGMT_fetch(ctx->libctx, ginf->algorithm, ctx->propq);
     if (keymgmt != NULL) {
         /*
@@ -364,12 +366,13 @@ static int add_provider_groups(const OSSL_PARAM params[], void *data)
         }
         EVP_KEYMGMT_free(keymgmt);
     }
+    ERR_pop_to_mark();
  err:
     if (ginf != NULL) {
         OPENSSL_free(ginf->tlsname);
         OPENSSL_free(ginf->realname);
         OPENSSL_free(ginf->algorithm);
-        ginf->tlsname = ginf->realname = NULL;
+        ginf->algorithm = ginf->tlsname = ginf->realname = NULL;
     }
     return ret;
 }
@@ -598,6 +601,7 @@ uint16_t tls1_shared_group(SSL *s, int nmatch)
     const uint16_t *pref, *supp;
     size_t num_pref, num_supp, i;
     int k;
+    SSL_CTX *ctx = s->ctx;
 
     /* Can't do anything on client side */
     if (s->server == 0)
@@ -634,10 +638,29 @@ uint16_t tls1_shared_group(SSL *s, int nmatch)
 
     for (k = 0, i = 0; i < num_pref; i++) {
         uint16_t id = pref[i];
+        const TLS_GROUP_INFO *inf;
 
         if (!tls1_in_list(id, supp, num_supp)
-            || !tls_group_allowed(s, id, SSL_SECOP_CURVE_SHARED))
-                    continue;
+                || !tls_group_allowed(s, id, SSL_SECOP_CURVE_SHARED))
+            continue;
+        inf = tls1_group_id_lookup(ctx, id);
+        if (!ossl_assert(inf != NULL))
+            return 0;
+        if (SSL_IS_DTLS(s)) {
+            if (inf->maxdtls == -1)
+                continue;
+            if ((inf->mindtls != 0 && DTLS_VERSION_LT(s->version, inf->mindtls))
+                    || (inf->maxdtls != 0
+                        && DTLS_VERSION_GT(s->version, inf->maxdtls)))
+                continue;
+        } else {
+            if (inf->maxtls == -1)
+                continue;
+            if ((inf->mintls != 0 && s->version < inf->mintls)
+                    || (inf->maxtls != 0 && s->version > inf->maxtls))
+                continue;
+        }
+
         if (nmatch == k)
             return id;
          k++;
@@ -711,7 +734,8 @@ static int gid_cb(const char *elem, int len, void *arg)
         return 0;
     if (garg->gidcnt == garg->gidmax) {
         uint16_t *tmp =
-            OPENSSL_realloc(garg->gid_arr, garg->gidmax + GROUPLIST_INCREMENT);
+            OPENSSL_realloc(garg->gid_arr,
+                            (garg->gidmax + GROUPLIST_INCREMENT) * sizeof(*garg->gid_arr));
         if (tmp == NULL)
             return 0;
         garg->gidmax += GROUPLIST_INCREMENT;
@@ -723,8 +747,11 @@ static int gid_cb(const char *elem, int len, void *arg)
     etmp[len] = 0;
 
     gid = tls1_group_name2id(garg->ctx, etmp);
-    if (gid == 0)
+    if (gid == 0) {
+        ERR_raise_data(ERR_LIB_SSL, ERR_R_PASSED_INVALID_ARGUMENT,
+                       "group '%s' cannot be set", etmp);
         return 0;
+    }
     for (i = 0; i < garg->gidcnt; i++)
         if (garg->gid_arr[i] == gid)
             return 0;
@@ -760,6 +787,7 @@ int tls1_set_groups_list(SSL_CTX *ctx, uint16_t **pext, size_t *pextlen,
     tmparr = OPENSSL_memdup(gcb.gid_arr, gcb.gidcnt * sizeof(*tmparr));
     if (tmparr == NULL)
         goto end;
+    OPENSSL_free(*pext);
     *pext = tmparr;
     *pextlen = gcb.gidcnt;
     ret = 1;
@@ -1780,7 +1808,7 @@ SSL_TICKET_STATUS tls_decrypt_ticket(SSL *s, const unsigned char *etick,
     SSL_SESSION *sess = NULL;
     unsigned char *sdec;
     const unsigned char *p;
-    int slen, renew_ticket = 0, declen;
+    int slen, ivlen, renew_ticket = 0, declen;
     SSL_TICKET_STATUS ret = SSL_TICKET_FATAL_ERR_OTHER;
     size_t mlen;
     unsigned char tick_hmac[EVP_MAX_MD_SIZE];
@@ -1893,9 +1921,14 @@ SSL_TICKET_STATUS tls_decrypt_ticket(SSL *s, const unsigned char *etick,
         goto end;
     }
 
+    ivlen = EVP_CIPHER_CTX_get_iv_length(ctx);
+    if (ivlen < 0) {
+        ret = SSL_TICKET_FATAL_ERR_OTHER;
+        goto end;
+    }
+
     /* Sanity check ticket length: must exceed keyname + IV + HMAC */
-    if (eticklen <=
-        TLSEXT_KEYNAME_LENGTH + EVP_CIPHER_CTX_get_iv_length(ctx) + mlen) {
+    if (eticklen <= TLSEXT_KEYNAME_LENGTH + ivlen + mlen) {
         ret = SSL_TICKET_NO_DECRYPT;
         goto end;
     }
@@ -1913,8 +1946,8 @@ SSL_TICKET_STATUS tls_decrypt_ticket(SSL *s, const unsigned char *etick,
     }
     /* Attempt to decrypt session data */
     /* Move p after IV to start of encrypted ticket, update length */
-    p = etick + TLSEXT_KEYNAME_LENGTH + EVP_CIPHER_CTX_get_iv_length(ctx);
-    eticklen -= TLSEXT_KEYNAME_LENGTH + EVP_CIPHER_CTX_get_iv_length(ctx);
+    p = etick + TLSEXT_KEYNAME_LENGTH + ivlen;
+    eticklen -= TLSEXT_KEYNAME_LENGTH + ivlen;
     sdec = OPENSSL_malloc(eticklen);
     if (sdec == NULL || EVP_DecryptUpdate(ctx, sdec, &slen, p,
                                           (int)eticklen) <= 0) {
@@ -2815,22 +2848,20 @@ int tls1_check_chain(SSL *s, X509 *x, EVP_PKEY *pk, STACK_OF(X509) *chain,
 
         ca_dn = s->s3.tmp.peer_ca_names;
 
-        if (!sk_X509_NAME_num(ca_dn))
+        if (ca_dn == NULL
+            || sk_X509_NAME_num(ca_dn) == 0
+            || ssl_check_ca_name(ca_dn, x))
             rv |= CERT_PKEY_ISSUER_NAME;
-
-        if (!(rv & CERT_PKEY_ISSUER_NAME)) {
-            if (ssl_check_ca_name(ca_dn, x))
-                rv |= CERT_PKEY_ISSUER_NAME;
-        }
-        if (!(rv & CERT_PKEY_ISSUER_NAME)) {
+        else
             for (i = 0; i < sk_X509_num(chain); i++) {
                 X509 *xtmp = sk_X509_value(chain, i);
+
                 if (ssl_check_ca_name(ca_dn, xtmp)) {
                     rv |= CERT_PKEY_ISSUER_NAME;
                     break;
                 }
             }
-        }
+
         if (!check_flags && !(rv & CERT_PKEY_ISSUER_NAME))
             goto end;
     } else
@@ -3010,6 +3041,8 @@ int ssl_security_cert_chain(SSL *s, STACK_OF(X509) *sk, X509 *x, int vfy)
     int rv, start_idx, i;
     if (x == NULL) {
         x = sk_X509_value(sk, 0);
+        if (x == NULL)
+            return ERR_R_INTERNAL_ERROR;
         start_idx = 1;
     } else
         start_idx = 0;
@@ -3368,6 +3401,8 @@ int SSL_set_tlsext_max_fragment_length(SSL *ssl, uint8_t mode)
 
 uint8_t SSL_SESSION_get_max_fragment_length(const SSL_SESSION *session)
 {
+    if (session->ext.max_fragment_len_mode == TLSEXT_max_fragment_length_UNSPECIFIED)
+        return TLSEXT_max_fragment_length_DISABLED;
     return session->ext.max_fragment_len_mode;
 }
 
@@ -3476,4 +3511,23 @@ int ssl_get_EC_curve_nid(const EVP_PKEY *pkey)
         return OBJ_txt2nid(gname);
 
     return NID_undef;
+}
+
+__owur int tls13_set_encoded_pub_key(EVP_PKEY *pkey,
+                                     const unsigned char *enckey,
+                                     size_t enckeylen)
+{
+    if (EVP_PKEY_is_a(pkey, "DH")) {
+        int bits = EVP_PKEY_get_bits(pkey);
+
+        if (bits <= 0 || enckeylen != (size_t)bits / 8)
+            /* the encoded key must be padded to the length of the p */
+            return 0;
+    } else if (EVP_PKEY_is_a(pkey, "EC")) {
+        if (enckeylen < 3 /* point format and at least 1 byte for x and y */
+            || enckey[0] != 0x04)
+            return 0;
+    }
+
+    return EVP_PKEY_set1_encoded_public_key(pkey, enckey, enckeylen);
 }

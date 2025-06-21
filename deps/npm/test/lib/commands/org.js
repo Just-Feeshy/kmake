@@ -1,52 +1,51 @@
 const t = require('tap')
-const ansiTrim = require('../../../lib/utils/ansi-trim.js')
+const mockNpm = require('../../fixtures/mock-npm')
 
-const output = []
-const npm = {
-  flatOptions: {
-    json: false,
-    parseable: false,
-    silent: false,
-    loglevel: 'info',
-  },
-  output: msg => {
-    output.push(msg)
-  },
+const mockOrg = async (t, { orgSize = 1, orgList = {}, ...npmOpts } = {}) => {
+  let setArgs = null
+  let rmArgs = null
+  let lsArgs = null
+
+  const libnpmorg = {
+    set: async (org, user, role, opts) => {
+      setArgs = { org, user, role, opts }
+      return {
+        org: {
+          name: org,
+          size: orgSize,
+        },
+        user,
+        role,
+      }
+    },
+    rm: async (org, user, opts) => {
+      rmArgs = { org, user, opts }
+    },
+    ls: async (org, opts) => {
+      lsArgs = { org, opts }
+      return orgList
+    },
+  }
+
+  const mock = await mockNpm(t, {
+    ...npmOpts,
+    command: 'org',
+    mocks: {
+      libnpmorg,
+      ...npmOpts.mocks,
+    },
+  })
+
+  return {
+    ...mock,
+    setArgs: () => setArgs,
+    rmArgs: () => rmArgs,
+    lsArgs: () => lsArgs,
+  }
 }
-
-let orgSize = 1
-let orgSetArgs = null
-let orgRmArgs = null
-let orgLsArgs = null
-let orgList = {}
-const libnpmorg = {
-  set: async (org, user, role, opts) => {
-    orgSetArgs = { org, user, role, opts }
-    return {
-      org: {
-        name: org,
-        size: orgSize,
-      },
-      user,
-      role,
-    }
-  },
-  rm: async (org, user, opts) => {
-    orgRmArgs = { org, user, opts }
-  },
-  ls: async (org, opts) => {
-    orgLsArgs = { org, opts }
-    return orgList
-  },
-}
-
-const Org = t.mock('../../../lib/commands/org.js', {
-  '../../../lib/utils/otplease.js': async (opts, fn) => fn(opts),
-  libnpmorg,
-})
-const org = new Org(npm)
 
 t.test('completion', async t => {
+  const { org } = await mockOrg(t)
   const completion = argv => org.completion({ conf: { argv: { remain: argv } } })
 
   const assertions = [
@@ -72,20 +71,17 @@ t.test('completion', async t => {
 })
 
 t.test('npm org - invalid subcommand', async t => {
+  const { org } = await mockOrg(t)
   await t.rejects(org.exec(['foo']), org.usage)
 })
 
 t.test('npm org add', async t => {
-  t.teardown(() => {
-    orgSetArgs = null
-    output.length = 0
-  })
+  const { npm, org, setArgs, outputs } = await mockOrg(t)
 
   await org.exec(['add', 'orgname', 'username'])
 
-  t.ok(orgSetArgs.opts.log, 'got passed a logger')
   t.match(
-    orgSetArgs,
+    setArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -95,17 +91,14 @@ t.test('npm org add', async t => {
     'received the correct arguments'
   )
   t.equal(
-    output[0],
+    outputs[0],
     'Added username as developer to orgname. You now have 1 member in this org.',
     'printed the correct output'
   )
 })
 
 t.test('npm org add - no org', async t => {
-  t.teardown(() => {
-    orgSetArgs = null
-    output.length = 0
-  })
+  const { org } = await mockOrg(t)
 
   await t.rejects(
     org.exec(['add', '', 'username']),
@@ -115,11 +108,7 @@ t.test('npm org add - no org', async t => {
 })
 
 t.test('npm org add - no user', async t => {
-  t.teardown(() => {
-    orgSetArgs = null
-    output.length = 0
-  })
-
+  const { org } = await mockOrg(t)
   await t.rejects(
     org.exec(['add', 'orgname', '']),
     /`username` is required/,
@@ -128,11 +117,7 @@ t.test('npm org add - no user', async t => {
 })
 
 t.test('npm org add - invalid role', async t => {
-  t.teardown(() => {
-    orgSetArgs = null
-    output.length = 0
-  })
-
+  const { org } = await mockOrg(t)
   await t.rejects(
     org.exec(['add', 'orgname', 'username', 'person']),
     /`role` must be one of/,
@@ -141,17 +126,12 @@ t.test('npm org add - invalid role', async t => {
 })
 
 t.test('npm org add - more users', async t => {
-  orgSize = 5
-  t.teardown(() => {
-    orgSize = 1
-    orgSetArgs = null
-    output.length = 0
-  })
+  const orgSize = 5
+  const { npm, org, outputs, setArgs } = await mockOrg(t, { orgSize })
 
   await org.exec(['add', 'orgname', 'username'])
-  t.ok(orgSetArgs.opts.log, 'got passed a logger')
   t.match(
-    orgSetArgs,
+    setArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -161,25 +141,21 @@ t.test('npm org add - more users', async t => {
     'received the correct arguments'
   )
   t.equal(
-    output[0],
+    outputs[0],
     'Added username as developer to orgname. You now have 5 members in this org.',
     'printed the correct output'
   )
 })
 
 t.test('npm org add - json output', async t => {
-  npm.flatOptions.json = true
-  t.teardown(() => {
-    npm.flatOptions.json = false
-    orgSetArgs = null
-    output.length = 0
+  const { npm, org, outputs, setArgs } = await mockOrg(t, {
+    config: { json: true },
   })
 
   await org.exec(['add', 'orgname', 'username'])
 
-  t.ok(orgSetArgs.opts.log, 'got passed a logger')
   t.match(
-    orgSetArgs,
+    setArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -189,7 +165,7 @@ t.test('npm org add - json output', async t => {
     'received the correct arguments'
   )
   t.strictSame(
-    JSON.parse(output[0]),
+    JSON.parse(outputs[0]),
     {
       org: {
         name: 'orgname',
@@ -203,18 +179,15 @@ t.test('npm org add - json output', async t => {
 })
 
 t.test('npm org add - parseable output', async t => {
-  npm.flatOptions.parseable = true
-  t.teardown(() => {
-    npm.flatOptions.parseable = false
-    orgSetArgs = null
-    output.length = 0
+  const config = { parseable: true }
+  const { npm, org, outputs, setArgs } = await mockOrg(t, {
+    config,
   })
 
   await org.exec(['add', 'orgname', 'username'])
 
-  t.ok(orgSetArgs.opts.log, 'got passed a logger')
   t.match(
-    orgSetArgs,
+    setArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -224,7 +197,7 @@ t.test('npm org add - parseable output', async t => {
     'received the correct arguments'
   )
   t.strictSame(
-    output.map(line => line.split(/\t/)),
+    outputs.map(line => line.split(/\t/)),
     [
       ['org', 'orgsize', 'user', 'role'],
       ['orgname', '1', 'username', 'developer'],
@@ -234,18 +207,15 @@ t.test('npm org add - parseable output', async t => {
 })
 
 t.test('npm org add - silent output', async t => {
-  npm.flatOptions.silent = true
-  t.teardown(() => {
-    npm.flatOptions.silent = false
-    orgSetArgs = null
-    output.length = 0
+  const config = { loglevel: 'silent' }
+  const { npm, org, outputs, setArgs } = await mockOrg(t, {
+    config,
   })
 
   await org.exec(['add', 'orgname', 'username'])
 
-  t.ok(orgSetArgs.opts.log, 'got passed a logger')
   t.match(
-    orgSetArgs,
+    setArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -254,21 +224,16 @@ t.test('npm org add - silent output', async t => {
     },
     'received the correct arguments'
   )
-  t.strictSame(output, [], 'prints no output')
+  t.strictSame(outputs, [], 'prints no output')
 })
 
 t.test('npm org rm', async t => {
-  t.teardown(() => {
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
-  })
+  const { npm, org, outputs, lsArgs, rmArgs } = await mockOrg(t)
 
   await org.exec(['rm', 'orgname', 'username'])
 
-  t.ok(orgRmArgs.opts.log, 'got passed a logger')
   t.match(
-    orgRmArgs,
+    rmArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -276,9 +241,8 @@ t.test('npm org rm', async t => {
     },
     'libnpmorg.rm received the correct args'
   )
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
@@ -286,18 +250,14 @@ t.test('npm org rm', async t => {
     'libnpmorg.ls received the correct args'
   )
   t.equal(
-    output[0],
+    outputs[0],
     'Successfully removed username from orgname. You now have 0 members in this org.',
     'printed the correct output'
   )
 })
 
 t.test('npm org rm - no org', async t => {
-  t.teardown(() => {
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
-  })
+  const { org } = await mockOrg(t)
 
   await t.rejects(
     org.exec(['rm', '', 'username']),
@@ -307,32 +267,23 @@ t.test('npm org rm - no org', async t => {
 })
 
 t.test('npm org rm - no user', async t => {
-  t.teardown(() => {
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
-  })
+  const { org } = await mockOrg(t)
 
   await t.rejects(org.exec(['rm', 'orgname']), /`username` is required/, 'threw the correct error')
 })
 
 t.test('npm org rm - one user left', async t => {
-  orgList = {
+  const orgList = {
     one: 'developer',
   }
-
-  t.teardown(() => {
-    orgList = {}
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs, rmArgs } = await mockOrg(t, {
+    orgList,
   })
 
   await org.exec(['rm', 'orgname', 'username'])
 
-  t.ok(orgRmArgs.opts.log, 'got passed a logger')
   t.match(
-    orgRmArgs,
+    rmArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -340,9 +291,8 @@ t.test('npm org rm - one user left', async t => {
     },
     'libnpmorg.rm received the correct args'
   )
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
@@ -350,26 +300,22 @@ t.test('npm org rm - one user left', async t => {
     'libnpmorg.ls received the correct args'
   )
   t.equal(
-    output[0],
+    outputs[0],
     'Successfully removed username from orgname. You now have 1 member in this org.',
     'printed the correct output'
   )
 })
 
 t.test('npm org rm - json output', async t => {
-  npm.flatOptions.json = true
-  t.teardown(() => {
-    npm.flatOptions.json = false
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
+  const config = { json: true }
+  const { npm, org, outputs, lsArgs, rmArgs } = await mockOrg(t, {
+    config,
   })
 
   await org.exec(['rm', 'orgname', 'username'])
 
-  t.ok(orgRmArgs.opts.log, 'got passed a logger')
   t.match(
-    orgRmArgs,
+    rmArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -377,9 +323,8 @@ t.test('npm org rm - json output', async t => {
     },
     'libnpmorg.rm received the correct args'
   )
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
@@ -387,7 +332,7 @@ t.test('npm org rm - json output', async t => {
     'libnpmorg.ls received the correct args'
   )
   t.strictSame(
-    JSON.parse(output[0]),
+    JSON.parse(outputs[0]),
     {
       user: 'username',
       org: 'orgname',
@@ -399,19 +344,15 @@ t.test('npm org rm - json output', async t => {
 })
 
 t.test('npm org rm - parseable output', async t => {
-  npm.flatOptions.parseable = true
-  t.teardown(() => {
-    npm.flatOptions.parseable = false
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
+  const config = { parseable: true }
+  const { npm, org, outputs, lsArgs, rmArgs } = await mockOrg(t, {
+    config,
   })
 
   await org.exec(['rm', 'orgname', 'username'])
 
-  t.ok(orgRmArgs.opts.log, 'got passed a logger')
   t.match(
-    orgRmArgs,
+    rmArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -419,9 +360,8 @@ t.test('npm org rm - parseable output', async t => {
     },
     'libnpmorg.rm received the correct args'
   )
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
@@ -429,7 +369,7 @@ t.test('npm org rm - parseable output', async t => {
     'libnpmorg.ls received the correct args'
   )
   t.strictSame(
-    output.map(line => line.split(/\t/)),
+    outputs.map(line => line.split(/\t/)),
     [
       ['user', 'org', 'userCount', 'deleted'],
       ['username', 'orgname', '0', 'true'],
@@ -439,19 +379,15 @@ t.test('npm org rm - parseable output', async t => {
 })
 
 t.test('npm org rm - silent output', async t => {
-  npm.flatOptions.silent = true
-  t.teardown(() => {
-    npm.flatOptions.silent = false
-    orgRmArgs = null
-    orgLsArgs = null
-    output.length = 0
+  const config = { loglevel: 'silent' }
+  const { npm, org, outputs, lsArgs, rmArgs } = await mockOrg(t, {
+    config,
   })
 
   await org.exec(['rm', 'orgname', 'username'])
 
-  t.ok(orgRmArgs.opts.log, 'got passed a logger')
   t.match(
-    orgRmArgs,
+    rmArgs(),
     {
       org: 'orgname',
       user: 'username',
@@ -459,156 +395,135 @@ t.test('npm org rm - silent output', async t => {
     },
     'libnpmorg.rm received the correct args'
   )
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'libnpmorg.ls received the correct args'
   )
-  t.strictSame(output, [], 'printed no output')
+  t.strictSame(outputs, [], 'printed no output')
 })
 
 t.test('npm org ls', async t => {
-  orgList = {
+  const orgList = {
     one: 'developer',
     two: 'admin',
     three: 'owner',
   }
-  t.teardown(() => {
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
   })
 
   await org.exec(['ls', 'orgname'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'receieved the correct args'
   )
-  const out = ansiTrim(output[0])
-  t.match(out, /one.*developer/, 'contains the developer member')
-  t.match(out, /two.*admin/, 'contains the admin member')
-  t.match(out, /three.*owner/, 'contains the owner member')
+  t.strictSame(outputs, [
+    'one - developer',
+    'three - owner',
+    'two - admin',
+  ])
 })
 
 t.test('npm org ls - user filter', async t => {
-  orgList = {
+  const orgList = {
     username: 'admin',
     missing: 'admin',
   }
-  t.teardown(() => {
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
   })
 
   await org.exec(['ls', 'orgname', 'username'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'receieved the correct args'
   )
-  const out = ansiTrim(output[0])
-  t.match(out, /username.*admin/, 'contains the filtered member')
-  t.notMatch(out, /missing.*admin/, 'does not contain other members')
+  t.strictSame(outputs, [
+    'username - admin',
+  ])
 })
 
 t.test('npm org ls - user filter, missing user', async t => {
-  orgList = {
+  const orgList = {
     missing: 'admin',
   }
-  t.teardown(() => {
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
   })
 
   await org.exec(['ls', 'orgname', 'username'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'receieved the correct args'
   )
-  const out = ansiTrim(output[0])
-  t.notMatch(out, /username/, 'does not contain the requested member')
-  t.notMatch(out, /missing.*admin/, 'does not contain other members')
+  t.strictSame(outputs, [])
 })
 
 t.test('npm org ls - no org', async t => {
-  t.teardown(() => {
-    orgLsArgs = null
-    output.length = 0
-  })
-
+  const { org } = await mockOrg(t)
   await t.rejects(org.exec(['ls']), /`orgname` is required/, 'throws the correct error')
 })
 
 t.test('npm org ls - json output', async t => {
-  npm.flatOptions.json = true
-  orgList = {
+  const config = { json: true }
+  const orgList = {
     one: 'developer',
     two: 'admin',
     three: 'owner',
   }
-  t.teardown(() => {
-    npm.flatOptions.json = false
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
+    config,
   })
 
   await org.exec(['ls', 'orgname'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'receieved the correct args'
   )
-  t.strictSame(JSON.parse(output[0]), orgList, 'prints the correct output')
+  t.strictSame(JSON.parse(outputs[0]), orgList, 'prints the correct output')
 })
 
 t.test('npm org ls - parseable output', async t => {
-  npm.flatOptions.parseable = true
-  orgList = {
+  const config = { parseable: true }
+  const orgList = {
     one: 'developer',
     two: 'admin',
     three: 'owner',
   }
-  t.teardown(() => {
-    npm.flatOptions.parseable = false
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
+    config,
   })
 
   await org.exec(['ls', 'orgname'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
@@ -616,7 +531,7 @@ t.test('npm org ls - parseable output', async t => {
     'receieved the correct args'
   )
   t.strictSame(
-    output.map(line => line.split(/\t/)),
+    outputs.map(line => line.split(/\t/)),
     [
       ['user', 'role'],
       ['one', 'developer'],
@@ -628,29 +543,26 @@ t.test('npm org ls - parseable output', async t => {
 })
 
 t.test('npm org ls - silent output', async t => {
-  npm.flatOptions.silent = true
-  orgList = {
+  const config = { loglevel: 'silent' }
+  const orgList = {
     one: 'developer',
     two: 'admin',
     three: 'owner',
   }
-  t.teardown(() => {
-    npm.flatOptions.silent = false
-    orgList = {}
-    orgLsArgs = null
-    output.length = 0
+  const { npm, org, outputs, lsArgs } = await mockOrg(t, {
+    orgList,
+    config,
   })
 
   await org.exec(['ls', 'orgname'])
 
-  t.ok(orgLsArgs.opts.log, 'got passed a logger')
   t.match(
-    orgLsArgs,
+    lsArgs(),
     {
       org: 'orgname',
       opts: npm.flatOptions,
     },
     'receieved the correct args'
   )
-  t.strictSame(output, [], 'printed no output')
+  t.strictSame(outputs, [], 'printed no output')
 })

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -74,8 +74,7 @@ static int ossl_statem_server13_read_transition(SSL *s, int mt)
                 return 1;
             }
             break;
-        } else if (s->ext.early_data == SSL_EARLY_DATA_ACCEPTED
-                   && !SSL_IS_QUIC(s)) {
+        } else if (s->ext.early_data == SSL_EARLY_DATA_ACCEPTED) {
             if (mt == SSL3_MT_END_OF_EARLY_DATA) {
                 st->hand_state = TLS_ST_SR_END_OF_EARLY_DATA;
                 return 1;
@@ -964,16 +963,6 @@ WORK_STATE ossl_statem_server_post_work(SSL *s, WORK_STATE wst)
                         SSL3_CC_APPLICATION | SSL3_CHANGE_CIPHER_SERVER_WRITE))
             /* SSLfatal() already called */
             return WORK_ERROR;
-
-#ifndef OPENSSL_NO_QUIC
-            if (SSL_IS_QUIC(s) && s->ext.early_data == SSL_EARLY_DATA_ACCEPTED) {
-                s->early_data_state = SSL_EARLY_DATA_FINISHED_READING;
-                if (!s->method->ssl3_enc->change_cipher_state(
-                        s, SSL3_CC_HANDSHAKE | SSL3_CHANGE_CIPHER_SERVER_READ))
-                    /* SSLfatal() already called */
-                    return WORK_ERROR;
-            }
-#endif
         }
         break;
 
@@ -1566,15 +1555,6 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL *s, PACKET *pkt)
                 goto err;
             }
         }
-#ifndef OPENSSL_NO_QUIC
-        if (SSL_IS_QUIC(s)) {
-            /* Any other QUIC checks on ClientHello here */
-            if (clienthello->session_id_len > 0) {
-                SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_LENGTH_MISMATCH);
-                goto err;
-            }
-        }
-#endif
     }
 
     if (!PACKET_copy_all(&compression, clienthello->compressions,
@@ -2358,9 +2338,8 @@ int tls_construct_server_hello(SSL *s, WPACKET *pkt)
      * so the following won't overwrite an ID that we're supposed
      * to send back.
      */
-    if (s->session->not_resumable ||
-        (!(s->ctx->session_cache_mode & SSL_SESS_CACHE_SERVER)
-         && !s->hit))
+    if (!(s->ctx->session_cache_mode & SSL_SESS_CACHE_SERVER)
+            && !s->hit)
         s->session->session_id_length = 0;
 
     if (usetls13) {
@@ -3006,7 +2985,7 @@ static int tls_process_cke_dhe(SSL *s, PACKET *pkt)
     }
 
     if (!EVP_PKEY_set1_encoded_public_key(ckey, data, i)) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+        SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_BAD_KEY_SHARE);
         goto err;
     }
 
@@ -3060,7 +3039,7 @@ static int tls_process_cke_ecdhe(SSL *s, PACKET *pkt)
         }
 
         if (EVP_PKEY_set1_encoded_public_key(ckey, data, i) <= 0) {
-            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_EC_LIB);
+            SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_BAD_KEY_SHARE);
             goto err;
         }
     }
@@ -3155,7 +3134,7 @@ static int tls_process_cke_gost(SSL *s, PACKET *pkt)
     }
     if (EVP_PKEY_decrypt_init(pkey_ctx) <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
-        return 0;
+        goto err;
     }
     /*
      * If client certificate is present and is of the same type, maybe
@@ -3264,13 +3243,13 @@ static int tls_process_cke_gost18(SSL *s, PACKET *pkt)
 
     /* Reuse EVP_PKEY_CTRL_SET_IV, make choice in engine code depending on size */
     if (EVP_PKEY_CTX_ctrl(pkey_ctx, -1, EVP_PKEY_OP_DECRYPT,
-                          EVP_PKEY_CTRL_SET_IV, 32, rnd_dgst) < 0) {
+                          EVP_PKEY_CTRL_SET_IV, 32, rnd_dgst) <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_R_LIBRARY_BUG);
         goto err;
     }
 
     if (EVP_PKEY_CTX_ctrl(pkey_ctx, -1, EVP_PKEY_OP_DECRYPT,
-                          EVP_PKEY_CTRL_CIPHER, cipher_nid, NULL) < 0) {
+                          EVP_PKEY_CTRL_CIPHER, cipher_nid, NULL) <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_R_LIBRARY_BUG);
         goto err;
     }
@@ -3641,15 +3620,24 @@ int tls_construct_server_certificate(SSL *s, WPACKET *pkt)
 static int create_ticket_prequel(SSL *s, WPACKET *pkt, uint32_t age_add,
                                  unsigned char *tick_nonce)
 {
+    uint32_t timeout = (uint32_t)s->session->timeout;
+
     /*
-     * Ticket lifetime hint: For TLSv1.2 this is advisory only and we leave this
-     * unspecified for resumed session (for simplicity).
+     * Ticket lifetime hint:
      * In TLSv1.3 we reset the "time" field above, and always specify the
-     * timeout.
+     * timeout, limited to a 1 week period per RFC8446.
+     * For TLSv1.2 this is advisory only and we leave this unspecified for
+     * resumed session (for simplicity).
      */
-    if (!WPACKET_put_bytes_u32(pkt,
-                               (s->hit && !SSL_IS_TLS13(s))
-                               ? 0 : (uint32_t)s->session->timeout)) {
+#define ONE_WEEK_SEC (7 * 24 * 60 * 60)
+
+    if (SSL_IS_TLS13(s)) {
+        if (s->session->timeout > ONE_WEEK_SEC)
+            timeout = ONE_WEEK_SEC;
+    } else if (s->hit)
+        timeout = 0;
+
+    if (!WPACKET_put_bytes_u32(pkt, timeout)) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         return 0;
     }
@@ -3671,6 +3659,10 @@ static int create_ticket_prequel(SSL *s, WPACKET *pkt, uint32_t age_add,
     return 1;
 }
 
+/*
+ * Returns 1 on success, 0 to abort construction of the ticket (non-fatal), or
+ * -1 on fatal error
+ */
 static int construct_stateless_ticket(SSL *s, WPACKET *pkt, uint32_t age_add,
                                       unsigned char *tick_nonce)
 {
@@ -3685,7 +3677,7 @@ static int construct_stateless_ticket(SSL *s, WPACKET *pkt, uint32_t age_add,
     SSL_CTX *tctx = s->session_ctx;
     unsigned char iv[EVP_MAX_IV_LENGTH];
     unsigned char key_name[TLSEXT_KEYNAME_LENGTH];
-    int iv_len, ok = 0;
+    int iv_len, ok = -1;
     size_t macoffset, macendoffset;
 
     /* get session encoding length */
@@ -3766,7 +3758,15 @@ static int construct_stateless_ticket(SSL *s, WPACKET *pkt, uint32_t age_add,
 #endif
 
         if (ret == 0) {
-
+            /*
+             * In TLSv1.2 we construct a 0 length ticket. In TLSv1.3 a 0
+             * length ticket is not allowed so we abort construction of the
+             * ticket
+             */
+            if (SSL_IS_TLS13(s)) {
+                ok = 0;
+                goto err;
+            }
             /* Put timeout and length */
             if (!WPACKET_put_bytes_u32(pkt, 0)
                     || !WPACKET_put_bytes_u16(pkt, 0)) {
@@ -3783,6 +3783,10 @@ static int construct_stateless_ticket(SSL *s, WPACKET *pkt, uint32_t age_add,
             goto err;
         }
         iv_len = EVP_CIPHER_CTX_get_iv_length(ctx);
+        if (iv_len < 0) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+            goto err;
+        }
     } else {
         EVP_CIPHER *cipher = EVP_CIPHER_fetch(s->ctx->libctx, "AES-256-CBC",
                                               s->ctx->propq);
@@ -3875,6 +3879,20 @@ static int construct_stateful_ticket(SSL *s, WPACKET *pkt, uint32_t age_add,
     return 1;
 }
 
+static void tls_update_ticket_counts(SSL *s)
+{
+    /*
+     * Increment both |sent_tickets| and |next_ticket_nonce|. |sent_tickets|
+     * gets reset to 0 if we send more tickets following a post-handshake
+     * auth, but |next_ticket_nonce| does not.  If we're sending extra
+     * tickets, decrement the count of pending extra tickets.
+     */
+    s->sent_tickets++;
+    s->next_ticket_nonce++;
+    if (s->ext.extra_tickets_expected > 0)
+        s->ext.extra_tickets_expected--;
+}
+
 int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
 {
     SSL_CTX *tctx = s->session_ctx;
@@ -3883,6 +3901,7 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
         unsigned char age_add_c[sizeof(uint32_t)];
         uint32_t age_add;
     } age_add_u;
+    int ret = 0;
 
     age_add_u.age_add = 0;
 
@@ -3980,10 +3999,20 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
             /* SSLfatal() already called */
             goto err;
         }
-    } else if (!construct_stateless_ticket(s, pkt, age_add_u.age_add,
-                                           tick_nonce)) {
-        /* SSLfatal() already called */
-        goto err;
+    } else {
+        int tmpret;
+
+        tmpret = construct_stateless_ticket(s, pkt, age_add_u.age_add,
+                                            tick_nonce);
+        if (tmpret != 1) {
+            if (tmpret == 0) {
+                ret = 2; /* Non-fatal. Abort construction but continue */
+                /* We count this as a success so update the counts anwyay */
+                tls_update_ticket_counts(s);
+            }
+            /* else SSLfatal() already called */
+            goto err;
+        }
     }
 
     if (SSL_IS_TLS13(s)) {
@@ -3993,22 +4022,13 @@ int tls_construct_new_session_ticket(SSL *s, WPACKET *pkt)
             /* SSLfatal() already called */
             goto err;
         }
-        /*
-         * Increment both |sent_tickets| and |next_ticket_nonce|. |sent_tickets|
-         * gets reset to 0 if we send more tickets following a post-handshake
-         * auth, but |next_ticket_nonce| does not.  If we're sending extra
-         * tickets, decrement the count of pending extra tickets.
-         */
-        s->sent_tickets++;
-        s->next_ticket_nonce++;
-        if (s->ext.extra_tickets_expected > 0)
-            s->ext.extra_tickets_expected--;
+        tls_update_ticket_counts(s);
         ssl_update_cache(s, SSL_SESS_CACHE_SERVER);
     }
 
-    return 1;
+    ret = 1;
  err:
-    return 0;
+    return ret;
 }
 
 /*

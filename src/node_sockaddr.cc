@@ -1,9 +1,10 @@
-#include "node_sockaddr-inl.h"  // NOLINT(build/include)
-#include "env-inl.h"
-#include "base64-inl.h"
+#include "node_sockaddr.h"  // NOLINT(build/include_inline)
 #include "base_object-inl.h"
+#include "env-inl.h"
 #include "memory_tracker-inl.h"
+#include "nbytes.h"
 #include "node_errors.h"
+#include "node_sockaddr-inl.h"  // NOLINT(build/include_inline)
 #include "uv.h"
 
 #include <memory>
@@ -17,7 +18,9 @@ using v8::Context;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
 using v8::Int32;
+using v8::Isolate;
 using v8::Local;
+using v8::LocalVector;
 using v8::MaybeLocal;
 using v8::Object;
 using v8::Uint32;
@@ -152,9 +155,8 @@ bool is_match_ipv4_ipv6(
                 sizeof(uint32_t)) == 0;
 }
 
-SocketAddress::CompareResult compare_ipv4(
-    const SocketAddress& one,
-    const SocketAddress& two) {
+std::partial_ordering compare_ipv4(const SocketAddress& one,
+                                   const SocketAddress& two) {
   const sockaddr_in* one_in =
       reinterpret_cast<const sockaddr_in*>(one.data());
   const sockaddr_in* two_in =
@@ -163,31 +165,29 @@ SocketAddress::CompareResult compare_ipv4(
   const uint32_t s_addr_two = ntohl(two_in->sin_addr.s_addr);
 
   if (s_addr_one < s_addr_two)
-    return SocketAddress::CompareResult::LESS_THAN;
+    return std::partial_ordering::less;
   else if (s_addr_one == s_addr_two)
-    return SocketAddress::CompareResult::SAME;
+    return std::partial_ordering::equivalent;
   else
-    return SocketAddress::CompareResult::GREATER_THAN;
+    return std::partial_ordering::greater;
 }
 
-SocketAddress::CompareResult compare_ipv6(
-    const SocketAddress& one,
-    const SocketAddress& two) {
+std::partial_ordering compare_ipv6(const SocketAddress& one,
+                                   const SocketAddress& two) {
   const sockaddr_in6* one_in =
       reinterpret_cast<const sockaddr_in6*>(one.data());
   const sockaddr_in6* two_in =
       reinterpret_cast<const sockaddr_in6*>(two.data());
   int ret = memcmp(&one_in->sin6_addr, &two_in->sin6_addr, 16);
   if (ret < 0)
-    return SocketAddress::CompareResult::LESS_THAN;
+    return std::partial_ordering::less;
   else if (ret > 0)
-    return SocketAddress::CompareResult::GREATER_THAN;
-  return SocketAddress::CompareResult::SAME;
+    return std::partial_ordering::greater;
+  return std::partial_ordering::equivalent;
 }
 
-SocketAddress::CompareResult compare_ipv4_ipv6(
-    const SocketAddress& ipv4,
-    const SocketAddress& ipv6) {
+std::partial_ordering compare_ipv4_ipv6(const SocketAddress& ipv4,
+                                        const SocketAddress& ipv6) {
   const sockaddr_in* ipv4_in =
       reinterpret_cast<const sockaddr_in*>(ipv4.data());
   const sockaddr_in6 * ipv6_in =
@@ -197,7 +197,7 @@ SocketAddress::CompareResult compare_ipv4_ipv6(
       reinterpret_cast<const uint8_t*>(&ipv6_in->sin6_addr);
 
   if (memcmp(ptr, mask, sizeof(mask)) != 0)
-    return SocketAddress::CompareResult::NOT_COMPARABLE;
+    return std::partial_ordering::unordered;
 
   int ret = memcmp(
       &ipv4_in->sin_addr,
@@ -205,17 +205,17 @@ SocketAddress::CompareResult compare_ipv4_ipv6(
       sizeof(uint32_t));
 
   if (ret < 0)
-    return SocketAddress::CompareResult::LESS_THAN;
+    return std::partial_ordering::less;
   else if (ret > 0)
-    return SocketAddress::CompareResult::GREATER_THAN;
-  return SocketAddress::CompareResult::SAME;
+    return std::partial_ordering::greater;
+  return std::partial_ordering::equivalent;
 }
 
 bool in_network_ipv4(
     const SocketAddress& ip,
     const SocketAddress& net,
     int prefix) {
-  uint32_t mask = ((1 << prefix) - 1) << (32 - prefix);
+  uint32_t mask = ((1ull << prefix) - 1) << (32 - prefix);
 
   const sockaddr_in* ip_in =
       reinterpret_cast<const sockaddr_in*>(ip.data());
@@ -233,7 +233,7 @@ bool in_network_ipv6(
   // Special case, if prefix == 128, then just do a
   // straight comparison.
   if (prefix == 128)
-    return compare_ipv6(ip, net) == SocketAddress::CompareResult::SAME;
+    return compare_ipv6(ip, net) == std::partial_ordering::equivalent;
 
   uint8_t r = prefix % 8;
   int len = (prefix - r) / 8;
@@ -261,7 +261,7 @@ bool in_network_ipv4_ipv6(
     int prefix) {
 
   if (prefix == 128)
-    return compare_ipv4_ipv6(ip, net) == SocketAddress::CompareResult::SAME;
+    return compare_ipv4_ipv6(ip, net) == std::partial_ordering::equivalent;
 
   uint8_t r = prefix % 8;
   int len = (prefix - r) / 8;
@@ -291,9 +291,9 @@ bool in_network_ipv6_ipv4(
     const SocketAddress& net,
     int prefix) {
   if (prefix == 32)
-    return compare_ipv4_ipv6(net, ip) == SocketAddress::CompareResult::SAME;
+    return compare_ipv4_ipv6(net, ip) == std::partial_ordering::equivalent;
 
-  uint32_t m = ((1 << prefix) - 1) << (32 - prefix);
+  uint32_t m = ((1ull << prefix) - 1) << (32 - prefix);
 
   const sockaddr_in6* ip_in =
       reinterpret_cast<const sockaddr_in6*>(ip.data());
@@ -307,7 +307,7 @@ bool in_network_ipv6_ipv4(
     return false;
 
   ptr += sizeof(mask);
-  uint32_t check = ReadUint32BE(ptr);
+  uint32_t check = nbytes::ReadUint32BE(ptr);
 
   return (check & m) == (htonl(net_in->sin_addr.s_addr) & m);
 }
@@ -335,8 +335,7 @@ bool SocketAddress::is_match(const SocketAddress& other) const {
   return false;
 }
 
-SocketAddress::CompareResult SocketAddress::compare(
-    const SocketAddress& other) const {
+std::partial_ordering SocketAddress::compare(const SocketAddress& other) const {
   switch (family()) {
     case AF_INET:
       switch (other.family()) {
@@ -347,16 +346,15 @@ SocketAddress::CompareResult SocketAddress::compare(
     case AF_INET6:
       switch (other.family()) {
         case AF_INET: {
-          CompareResult c = compare_ipv4_ipv6(other, *this);
-          switch (c) {
-            case SocketAddress::CompareResult::NOT_COMPARABLE:
-              // Fall through
-            case SocketAddress::CompareResult::SAME:
-              return c;
-            case SocketAddress::CompareResult::GREATER_THAN:
-              return SocketAddress::CompareResult::LESS_THAN;
-            case SocketAddress::CompareResult::LESS_THAN:
-              return SocketAddress::CompareResult::GREATER_THAN;
+          auto c = compare_ipv4_ipv6(other, *this);
+          if (c == std::partial_ordering::unordered) {
+            return std::partial_ordering::unordered;
+          } else if (c == std::partial_ordering::equivalent) {
+            return std::partial_ordering::equivalent;
+          } else if (c == std::partial_ordering::less) {
+            return std::partial_ordering::greater;
+          } else if (c == std::partial_ordering::greater) {
+            return std::partial_ordering::less;
           }
           break;
         }
@@ -364,7 +362,7 @@ SocketAddress::CompareResult SocketAddress::compare(
       }
       break;
   }
-  return SocketAddress::CompareResult::NOT_COMPARABLE;
+  return std::partial_ordering::unordered;
 }
 
 bool SocketAddress::is_in_network(
@@ -501,15 +499,14 @@ std::string SocketAddressBlockList::SocketAddressMaskRule::ToString() {
 
 MaybeLocal<Array> SocketAddressBlockList::ListRules(Environment* env) {
   Mutex::ScopedLock lock(mutex_);
-  std::vector<Local<Value>> rules;
+  LocalVector<Value> rules(env->isolate());
   if (!ListRules(env, &rules))
     return MaybeLocal<Array>();
   return Array::New(env->isolate(), rules.data(), rules.size());
 }
 
-bool SocketAddressBlockList::ListRules(
-    Environment* env,
-    std::vector<v8::Local<v8::Value>>* rules) {
+bool SocketAddressBlockList::ListRules(Environment* env,
+                                       LocalVector<Value>* rules) {
   if (parent_ && !parent_->ListRules(env, rules))
     return false;
   for (const auto& rule : rules_) {
@@ -556,7 +553,7 @@ BaseObjectPtr<SocketAddressBlockListWrap> SocketAddressBlockListWrap::New(
   if (!env->blocklist_constructor_template()
           ->InstanceTemplate()
           ->NewInstance(env->context()).ToLocal(&obj)) {
-    return BaseObjectPtr<SocketAddressBlockListWrap>();
+    return nullptr;
   }
   BaseObjectPtr<SocketAddressBlockListWrap> wrap =
       MakeBaseObject<SocketAddressBlockListWrap>(env, obj);
@@ -571,7 +568,7 @@ BaseObjectPtr<SocketAddressBlockListWrap> SocketAddressBlockListWrap::New(
   if (!env->blocklist_constructor_template()
           ->InstanceTemplate()
           ->NewInstance(env->context()).ToLocal(&obj)) {
-    return BaseObjectPtr<SocketAddressBlockListWrap>();
+    return nullptr;
   }
   BaseObjectPtr<SocketAddressBlockListWrap> wrap =
       MakeBaseObject<SocketAddressBlockListWrap>(
@@ -593,7 +590,7 @@ void SocketAddressBlockListWrap::AddAddress(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBlockListWrap* wrap;
-  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
 
   CHECK(SocketAddressBase::HasInstance(env, args[0]));
   SocketAddressBase* addr;
@@ -608,7 +605,7 @@ void SocketAddressBlockListWrap::AddRange(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBlockListWrap* wrap;
-  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
 
   CHECK(SocketAddressBase::HasInstance(env, args[0]));
   CHECK(SocketAddressBase::HasInstance(env, args[1]));
@@ -633,7 +630,7 @@ void SocketAddressBlockListWrap::AddSubnet(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBlockListWrap* wrap;
-  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
 
   CHECK(SocketAddressBase::HasInstance(env, args[0]));
   CHECK(args[1]->IsInt32());
@@ -659,7 +656,7 @@ void SocketAddressBlockListWrap::Check(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBlockListWrap* wrap;
-  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
 
   CHECK(SocketAddressBase::HasInstance(env, args[0]));
   SocketAddressBase* addr;
@@ -672,7 +669,7 @@ void SocketAddressBlockListWrap::GetRules(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBlockListWrap* wrap;
-  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&wrap, args.This());
   Local<Array> rules;
   if (wrap->blocklist_->ListRules(env).ToLocal(&rules))
     args.GetReturnValue().Set(rules);
@@ -697,15 +694,15 @@ Local<FunctionTemplate> SocketAddressBlockListWrap::GetConstructorTemplate(
     Environment* env) {
   Local<FunctionTemplate> tmpl = env->blocklist_constructor_template();
   if (tmpl.IsEmpty()) {
-    tmpl = env->NewFunctionTemplate(SocketAddressBlockListWrap::New);
+    Isolate* isolate = env->isolate();
+    tmpl = NewFunctionTemplate(isolate, SocketAddressBlockListWrap::New);
     tmpl->SetClassName(FIXED_ONE_BYTE_STRING(env->isolate(), "BlockList"));
-    tmpl->Inherit(BaseObject::GetConstructorTemplate(env));
     tmpl->InstanceTemplate()->SetInternalFieldCount(kInternalFieldCount);
-    env->SetProtoMethod(tmpl, "addAddress", AddAddress);
-    env->SetProtoMethod(tmpl, "addRange", AddRange);
-    env->SetProtoMethod(tmpl, "addSubnet", AddSubnet);
-    env->SetProtoMethod(tmpl, "check", Check);
-    env->SetProtoMethod(tmpl, "getRules", GetRules);
+    SetProtoMethod(isolate, tmpl, "addAddress", AddAddress);
+    SetProtoMethod(isolate, tmpl, "addRange", AddRange);
+    SetProtoMethod(isolate, tmpl, "addSubnet", AddSubnet);
+    SetProtoMethod(isolate, tmpl, "check", Check);
+    SetProtoMethod(isolate, tmpl, "getRules", GetRules);
     env->set_blocklist_constructor_template(tmpl);
   }
   return tmpl;
@@ -718,11 +715,11 @@ void SocketAddressBlockListWrap::Initialize(
     void* priv) {
   Environment* env = Environment::GetCurrent(context);
 
-  env->SetConstructorFunction(
-      target,
-      "BlockList",
-      GetConstructorTemplate(env),
-      Environment::SetConstructorFunctionFlag::NONE);
+  SetConstructorFunction(context,
+                         target,
+                         "BlockList",
+                         GetConstructorTemplate(env),
+                         SetConstructorFunctionFlag::NONE);
 
   SocketAddressBase::Initialize(env, target);
 
@@ -750,25 +747,25 @@ Local<FunctionTemplate> SocketAddressBase::GetConstructorTemplate(
     Environment* env) {
   Local<FunctionTemplate> tmpl = env->socketaddress_constructor_template();
   if (tmpl.IsEmpty()) {
-    tmpl = env->NewFunctionTemplate(New);
+    Isolate* isolate = env->isolate();
+    tmpl = NewFunctionTemplate(isolate, New);
     tmpl->SetClassName(FIXED_ONE_BYTE_STRING(env->isolate(), "SocketAddress"));
     tmpl->InstanceTemplate()->SetInternalFieldCount(
         SocketAddressBase::kInternalFieldCount);
-    tmpl->Inherit(BaseObject::GetConstructorTemplate(env));
-    env->SetProtoMethod(tmpl, "detail", Detail);
-    env->SetProtoMethod(tmpl, "legacyDetail", LegacyDetail);
-    env->SetProtoMethodNoSideEffect(tmpl, "flowlabel", GetFlowLabel);
+    SetProtoMethod(isolate, tmpl, "detail", Detail);
+    SetProtoMethod(isolate, tmpl, "legacyDetail", LegacyDetail);
+    SetProtoMethodNoSideEffect(isolate, tmpl, "flowlabel", GetFlowLabel);
     env->set_socketaddress_constructor_template(tmpl);
   }
   return tmpl;
 }
 
 void SocketAddressBase::Initialize(Environment* env, Local<Object> target) {
-  env->SetConstructorFunction(
-      target,
-      "SocketAddress",
-      GetConstructorTemplate(env),
-      Environment::SetConstructorFunctionFlag::NONE);
+  SetConstructorFunction(env->context(),
+                         target,
+                         "SocketAddress",
+                         GetConstructorTemplate(env),
+                         SetConstructorFunctionFlag::NONE);
 }
 
 BaseObjectPtr<SocketAddressBase> SocketAddressBase::Create(
@@ -778,7 +775,7 @@ BaseObjectPtr<SocketAddressBase> SocketAddressBase::Create(
   if (!GetConstructorTemplate(env)
           ->InstanceTemplate()
           ->NewInstance(env->context()).ToLocal(&obj)) {
-    return BaseObjectPtr<SocketAddressBase>();
+    return nullptr;
   }
 
   return MakeBaseObject<SocketAddressBase>(env, obj, std::move(address));
@@ -813,7 +810,7 @@ void SocketAddressBase::Detail(const FunctionCallbackInfo<Value>& args) {
   Local<Object> detail = args[0].As<Object>();
 
   SocketAddressBase* base;
-  ASSIGN_OR_RETURN_UNWRAP(&base, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&base, args.This());
 
   Local<Value> address;
   if (!ToV8Value(env->context(), base->address_->address()).ToLocal(&address))
@@ -839,15 +836,17 @@ void SocketAddressBase::Detail(const FunctionCallbackInfo<Value>& args) {
 
 void SocketAddressBase::GetFlowLabel(const FunctionCallbackInfo<Value>& args) {
   SocketAddressBase* base;
-  ASSIGN_OR_RETURN_UNWRAP(&base, args.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&base, args.This());
   args.GetReturnValue().Set(base->address_->flow_label());
 }
 
 void SocketAddressBase::LegacyDetail(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   SocketAddressBase* base;
-  ASSIGN_OR_RETURN_UNWRAP(&base, args.Holder());
-  args.GetReturnValue().Set(base->address_->ToJS(env));
+  ASSIGN_OR_RETURN_UNWRAP(&base, args.This());
+  Local<Object> address;
+  if (!base->address_->ToJS(env).ToLocal(&address)) return;
+  args.GetReturnValue().Set(address);
 }
 
 SocketAddressBase::SocketAddressBase(
@@ -881,6 +880,5 @@ BaseObjectPtr<BaseObject> SocketAddressBase::TransferData::Deserialize(
 
 }  // namespace node
 
-NODE_MODULE_CONTEXT_AWARE_INTERNAL(
-    block_list,
-    node::SocketAddressBlockListWrap::Initialize)
+NODE_BINDING_CONTEXT_AWARE_INTERNAL(
+    block_list, node::SocketAddressBlockListWrap::Initialize)

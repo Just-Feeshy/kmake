@@ -104,10 +104,10 @@ export function jsonAPI({ filename }) {
           nodes.slice(0, i).every((node) => node.type === 'list')
         ) {
           const text = textJoin(node.children[0].children, file);
-          const stability = text.match(stabilityExpr);
+          const stability = stabilityExpr.exec(text);
           if (stability) {
             current.stability = parseInt(stability[1], 10);
-            current.stabilityText = stability[2].trim();
+            current.stabilityText = stability[2].replaceAll('\n', ' ').trim();
             delete nodes[i];
           }
         }
@@ -220,10 +220,10 @@ export function jsonAPI({ filename }) {
       // which are actually just descriptions of a constructor class signature.
       // Merge them into the parent.
       if (current.type === 'class' && current.ctors) {
-        current.signatures = current.signatures || [];
+        current.signatures ||= [];
         const sigs = current.signatures;
         current.ctors.forEach((ctor) => {
-          ctor.signatures = ctor.signatures || [{}];
+          ctor.signatures ||= [{}];
           ctor.signatures.forEach((sig) => {
             sig.desc = ctor.desc;
           });
@@ -261,8 +261,8 @@ export function jsonAPI({ filename }) {
               }
               if (parent[key] && Array.isArray(parent[key])) {
                 parent[key] = parent[key].concat(current[key]);
-              } else if (!parent[key]) {
-                parent[key] = current[key];
+              } else {
+                parent[key] ||= current[key];
               }
           }
         });
@@ -271,7 +271,7 @@ export function jsonAPI({ filename }) {
       // Add this section to the parent. Sometimes we have two headings with a
       // single blob of description. If the preceding entry at this level
       // shares a name and is lacking a description, copy it backwards.
-      if (!parent[plur]) parent[plur] = [];
+      parent[plur] ||= [];
       const prev = parent[plur].slice(-1)[0];
       if (prev && prev.name === current.name && !prev.desc) {
         prev.desc = current.desc;
@@ -320,8 +320,8 @@ function parseSignature(text, sig) {
 
     const eq = sigParam.indexOf('=');
     if (eq !== -1) {
-      defaultValue = sigParam.substr(eq + 1);
-      sigParam = sigParam.substr(0, eq);
+      defaultValue = sigParam.substring(eq + 1);
+      sigParam = sigParam.substring(0, eq);
     }
 
     // At this point, the name should match. If it doesn't find one that does.
@@ -349,7 +349,7 @@ function parseSignature(text, sig) {
           throw new Error(
             `Invalid param "${sigParam}"\n` +
             ` > ${JSON.stringify(listParam)}\n` +
-            ` > ${text}`
+            ` > ${text}`,
           );
         }
       }
@@ -376,7 +376,7 @@ function parseListItem(item, file) {
 
   current.textRaw = item.children.filter((node) => node.type !== 'list')
     .map((node) => (
-      file.value.slice(node.position.start.offset, node.position.end.offset))
+      file.value.slice(node.position.start.offset, node.position.end.offset)),
     )
     .join('').replace(/\s+/g, ' ').replace(/<!--.*?-->/sg, '');
   let text = current.textRaw;

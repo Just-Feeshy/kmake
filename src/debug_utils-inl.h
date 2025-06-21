@@ -5,6 +5,7 @@
 
 #include "debug_utils.h"
 #include "env.h"
+#include "util-inl.h"
 
 #include <type_traits>
 
@@ -26,10 +27,13 @@ struct ToStringHelper {
     return value != nullptr ? value : "(null)";
   }
   static std::string Convert(const std::string& value) { return value; }
+  static std::string Convert(std::string_view value) {
+    return std::string(value);
+  }
   static std::string Convert(bool value) { return value ? "true" : "false"; }
   template <unsigned BASE_BITS,
             typename T,
-            typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
+            typename = std::enable_if_t<std::is_integral_v<T>>>
   static std::string BaseConvert(const T& value) {
     auto v = static_cast<uint64_t>(value);
     char ret[3 * sizeof(T)];
@@ -45,8 +49,8 @@ struct ToStringHelper {
   }
   template <unsigned BASE_BITS,
             typename T,
-            typename std::enable_if<!std::is_integral<T>::value, int>::type = 0>
-  static std::string BaseConvert(T value) {
+            typename = std::enable_if_t<!std::is_integral_v<T>>>
+  static std::string BaseConvert(T& value) {  // NOLINT(runtime/references)
     return Convert(std::forward<T>(value));
   }
 };
@@ -63,7 +67,8 @@ std::string ToBaseString(const T& value) {
 
 inline std::string SPrintFImpl(const char* format) {
   const char* p = strchr(format, '%');
-  if (LIKELY(p == nullptr)) return format;
+  if (p == nullptr) [[unlikely]]
+    return format;
   CHECK_EQ(p[1], '%');  // Only '%%' allowed when there are no arguments.
 
   return std::string(format, p + 1) + SPrintFImpl(p + 2);
@@ -134,14 +139,16 @@ inline void FORCE_INLINE Debug(EnabledDebugList* list,
                                DebugCategory cat,
                                const char* format,
                                Args&&... args) {
-  if (!UNLIKELY(list->enabled(cat))) return;
+  if (!list->enabled(cat)) [[unlikely]]
+    return;
   FPrintF(stderr, format, std::forward<Args>(args)...);
 }
 
 inline void FORCE_INLINE Debug(EnabledDebugList* list,
                                DebugCategory cat,
                                const char* message) {
-  if (!UNLIKELY(list->enabled(cat))) return;
+  if (!list->enabled(cat)) [[unlikely]]
+    return;
   FPrintF(stderr, "%s", message);
 }
 
@@ -190,8 +197,10 @@ inline void FORCE_INLINE Debug(AsyncWrap* async_wrap,
                                const char* format,
                                Args&&... args) {
   DCHECK_NOT_NULL(async_wrap);
-  DebugCategory cat = static_cast<DebugCategory>(async_wrap->provider_type());
-  if (!UNLIKELY(async_wrap->env()->enabled_debug_list()->enabled(cat))) return;
+  if (auto cat = static_cast<DebugCategory>(async_wrap->provider_type());
+      !async_wrap->env()->enabled_debug_list()->enabled(cat)) [[unlikely]] {
+    return;
+  }
   UnconditionalAsyncWrapDebug(async_wrap, format, std::forward<Args>(args)...);
 }
 

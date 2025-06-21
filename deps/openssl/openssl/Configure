@@ -1,6 +1,6 @@
 #! /usr/bin/env perl
 # -*- mode: perl; -*-
-# Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -178,7 +178,6 @@ my @gcc_devteam_warn = qw(
 #       -Wextended-offsetof -- no, needed in CMS ASN1 code
 my @clang_devteam_warn = qw(
     -Wno-unknown-warning-option
-    -Wswitch-default
     -Wno-parentheses-equality
     -Wno-language-extension-token
     -Wno-extended-offsetof
@@ -405,6 +404,7 @@ my @disablables = (
     "asan",
     "asm",
     "async",
+    "atexit",
     "autoalginit",
     "autoerrinit",
     "autoload-config",
@@ -467,7 +467,6 @@ my @disablables = (
     "poly1305",
     "posix-io",
     "psk",
-    "quic",
     "rc2",
     "rc4",
     "rc5",
@@ -578,7 +577,6 @@ my @disable_cascades = (
                              "sm3", "sm4", "srp",
                              "srtp", "ssl3-method", "ssl-trace",
                              "ts", "ui-console", "whirlpool",
-                             "quic",
                              "fips-securitychecks" ],
     sub { $config{processor} eq "386" }
                         => [ "sse2" ],
@@ -586,7 +584,7 @@ my @disable_cascades = (
     "ssl3-method"       => [ "ssl3" ],
     "zlib"              => [ "zlib-dynamic" ],
     "des"               => [ "mdc2" ],
-    "ec"                => [ "ec2m", "ecdsa", "ecdh", "sm2", "gost", "quic" ],
+    "ec"                => [ "ec2m", "ecdsa", "ecdh", "sm2", "gost" ],
     "dgram"             => [ "dtls", "sctp" ],
     "sock"              => [ "dgram" ],
     "dtls"              => [ @dtls ],
@@ -599,8 +597,7 @@ my @disable_cascades = (
 
     "crypto-mdebug"     => [ "crypto-mdebug-backtrace" ],
 
-    # If no modules, then no dynamic engines either
-    "module"            => [ "dynamic-engine" ],
+    "module"            => [ "dynamic-engine", "fips" ],
 
     # Without shared libraries, dynamic engines aren't possible.
     # This is due to them having to link with libcrypto and register features
@@ -617,8 +614,6 @@ my @disable_cascades = (
     # Without position independent code, there can be no shared libraries
     # or modules.
     "pic"               => [ "shared", "module" ],
-
-    "module"            => [ "fips", "dso" ],
 
     "engine"            => [ "dynamic-engine", grep(/eng$/, @disablables) ],
     "dynamic-engine"    => [ "loadereng" ],
@@ -640,7 +635,6 @@ my @disable_cascades = (
     "legacy"            => [ "md2" ],
 
     "cmp"               => [ "crmf" ],
-    "tls1_3"            => [ "quic" ],
 
     "fips"              => [ "fips-securitychecks", "acvp-tests" ],
 
@@ -939,8 +933,6 @@ while (@argvcopy)
                 if (/^--prefix=(.*)$/)
                         {
                         $config{prefix}=$1;
-                        die "Directory given with --prefix MUST be absolute\n"
-                                unless file_name_is_absolute($config{prefix});
                         }
                 elsif (/^--api=(.*)$/)
                         {
@@ -1383,6 +1375,11 @@ foreach (keys %useradd) {
 # At this point, we can forget everything about %user and %useradd,
 # because it's now all been merged into the corresponding $config entry
 
+if ($config{prefix} && !$config{CROSS_COMPILE}) {
+    die "Directory given with --prefix MUST be absolute\n"
+        unless file_name_is_absolute($config{prefix});
+}
+
 if (grep { $_ =~ /(?:^|\s)-static(?:\s|$)/ } @{$config{LDFLAGS}}) {
     disable('static', 'pic', 'threads');
 }
@@ -1397,7 +1394,7 @@ $target{build_scheme} = [ $target{build_scheme} ]
 my ($builder, $builder_platform, @builder_opts) =
     @{$target{build_scheme}};
 
-foreach my $checker (($builder_platform."-".$target{build_file}."-checker.pm",
+foreach my $checker (($builder_platform."-".$config{build_file}."-checker.pm",
                       $builder_platform."-checker.pm")) {
     my $checker_path = catfile($srcdir, "Configurations", $checker);
     if (-f $checker_path) {
@@ -1426,7 +1423,7 @@ if ($target =~ /^mingw/ && `$config{CC} --target-help 2>&1` =~ m/-mno-cygwin/m)
         }
 
 if ($target =~ /linux.*-mips/ && !$disabled{asm}
-        && !grep { $_ !~ /-m(ips|arch=)/ } (@{$config{CFLAGS}})) {
+        && !grep { $_ =~ /-m(ips|arch=)/ } (@{$config{CFLAGS}})) {
         # minimally required architecture flags for assembly modules
         my $value;
         $value = '-mips2' if ($target =~ /mips32/);
@@ -1505,9 +1502,7 @@ unless ($disabled{asan} || defined $detected_sanitizers{asan}) {
 }
 
 unless ($disabled{ubsan} || defined $detected_sanitizers{ubsan}) {
-    # -DPEDANTIC or -fnosanitize=alignment may also be required on some
-    # platforms.
-    push @{$config{cflags}}, "-fsanitize=undefined", "-fno-sanitize-recover=all";
+    push @{$config{cflags}}, "-fsanitize=undefined", "-fno-sanitize-recover=all", "-DPEDANTIC";
 }
 
 unless ($disabled{msan} || defined $detected_sanitizers{msan}) {
@@ -1587,7 +1582,7 @@ if (!$disabled{makedepend}) {
     disable('unavailable', 'makedepend') unless $config{makedep_scheme};
 }
 
-if (!$disabled{asm} && !$predefined_C{__MACH__} && $^O ne 'VMS') {
+if (!$disabled{asm} && !$predefined_C{__MACH__} && $^O ne 'VMS' && !$predefined_C{_AIX}) {
     # probe for -Wa,--noexecstack option...
     if ($predefined_C{__clang__}) {
         # clang has builtin assembler, which doesn't recognize --help,
@@ -1719,20 +1714,13 @@ unless ($disabled{devcryptoeng}) {
 
 unless ($disabled{ktls}) {
     $config{ktls}="";
+    my $cc = $config{CROSS_COMPILE}.$config{CC};
     if ($target =~ m/^linux/) {
-        my $usr = "/usr/$config{cross_compile_prefix}";
-        chop($usr);
-        if ($config{cross_compile_prefix} eq "") {
-            $usr = "/usr";
-        }
-        my $minver = (4 << 16) + (13 << 8) + 0;
-        my @verstr = split(" ",`cat $usr/include/linux/version.h | grep LINUX_VERSION_CODE`);
-
-        if ($verstr[2] < $minver) {
+        system("printf '#include <sys/types.h>\n#include <linux/tls.h>' | $cc -E - >/dev/null 2>&1");
+        if ($? != 0) {
             disable('too-old-kernel', 'ktls');
         }
     } elsif ($target =~ m/^BSD/) {
-        my $cc = $config{CROSS_COMPILE}.$config{CC};
         system("printf '#include <sys/types.h>\n#include <sys/ktls.h>' | $cc -E - >/dev/null 2>&1");
         if ($? != 0) {
             disable('too-old-freebsd', 'ktls');
@@ -1847,11 +1835,12 @@ if ($builder eq "unified") {
         my $base = shift;
         my $dir = shift;
         my $relativeto = shift || ".";
+        my $no_mkpath = shift // 0;
 
         $dir = catdir($base,$dir) unless isabsolute($dir);
 
         # Make sure the directories we're building in exists
-        mkpath($dir);
+        mkpath($dir) unless $no_mkpath;
 
         my $res = abs2rel(absolutedir($dir), rel2abs($relativeto));
         #print STDERR "DEBUG[cleandir]: $dir , $base => $res\n";
@@ -1862,6 +1851,7 @@ if ($builder eq "unified") {
         my $base = shift;
         my $file = shift;
         my $relativeto = shift || ".";
+        my $no_mkpath = shift // 0;
 
         $file = catfile($base,$file) unless isabsolute($file);
 
@@ -1869,7 +1859,7 @@ if ($builder eq "unified") {
         my $f = basename($file);
 
         # Make sure the directories we're building in exists
-        mkpath($d);
+        mkpath($d) unless $no_mkpath;
 
         my $res = abs2rel(catfile(absolutedir($d), $f), rel2abs($relativeto));
         #print STDERR "DEBUG[cleanfile]: $d , $f => $res\n";
@@ -1879,8 +1869,8 @@ if ($builder eq "unified") {
     # Store the name of the template file we will build the build file from
     # in %config.  This may be useful for the build file itself.
     my @build_file_template_names =
-        ( $builder_platform."-".$target{build_file}.".tmpl",
-          $target{build_file}.".tmpl" );
+        ( $builder_platform."-".$config{build_file}.".tmpl",
+          $config{build_file}.".tmpl" );
     my @build_file_templates = ();
 
     # First, look in the user provided directory, if given
@@ -1899,7 +1889,7 @@ if ($builder eq "unified") {
     }
     # Then, look in our standard directory
     push @build_file_templates,
-        ( map { cleanfile($srcdir, catfile("Configurations", $_), $blddir) }
+        ( map { cleanfile($srcdir, catfile("Configurations", $_), $blddir, 1) }
           @build_file_template_names );
 
     my $build_file_template;
@@ -1914,7 +1904,7 @@ if ($builder eq "unified") {
     }
     $config{build_file_templates}
       = [ cleanfile($srcdir, catfile("Configurations", "common0.tmpl"),
-                    $blddir),
+                    $blddir, 1),
            $build_file_template ];
 
     my @build_dirs = ( [ ] );   # current directory
@@ -1923,7 +1913,7 @@ if ($builder eq "unified") {
 
     # We want to detect configdata.pm in the source tree, so we
     # don't use it if the build tree is different.
-    my $src_configdata = cleanfile($srcdir, "configdata.pm", $blddir);
+    my $src_configdata = cleanfile($srcdir, "configdata.pm", $blddir, 1);
 
     # Any source file that we recognise is placed in this hash table, with
     # the list of its intended destinations as value.  When everything has
@@ -2214,9 +2204,10 @@ if ($builder eq "unified") {
                                 \$attributes{depends}, $+{ATTRIBS},
                                 tokenize($expand_variables->($+{VALUE})))
                          if !@skip || $skip[$#skip] > 0; },
-            qr/^\s* GENERATE ${index_re} \s* = \s* ${value_re} \s* $/x
+            qr/^\s* GENERATE ${index_re} ${attribs_re} \s* = \s* ${value_re} \s* $/x
             => sub { $push_to->(\%generate, $expand_variables->($+{INDEX}),
-                                undef, undef, $expand_variables->($+{VALUE}))
+                                \$attributes{generate}, $+{ATTRIBS},
+                                $expand_variables->($+{VALUE}))
                          if !@skip || $skip[$#skip] > 0; },
             qr/^\s* (?:\#.*)? $/x => sub { },
             "OTHERWISE" => sub { die "Something wrong with this line:\n$_\nat $sourced/$f" },
@@ -2275,7 +2266,7 @@ EOF
             my $dest = $_;
             my $ddest = cleanfile($buildd, $_, $blddir);
             foreach (@{$sources{$dest}}) {
-                my $s = cleanfile($sourced, $_, $blddir);
+                my $s = cleanfile($sourced, $_, $blddir, 1);
 
                 # If it's generated or we simply don't find it in the source
                 # tree, we assume it's in the build tree.
@@ -2320,7 +2311,7 @@ EOF
             my $dest = $_;
             my $ddest = cleanfile($buildd, $_, $blddir);
             foreach (@{$shared_sources{$dest}}) {
-                my $s = cleanfile($sourced, $_, $blddir);
+                my $s = cleanfile($sourced, $_, $blddir, 1);
 
                 # If it's generated or we simply don't find it in the source
                 # tree, we assume it's in the build tree.
@@ -2375,7 +2366,7 @@ EOF
                 if scalar @{$generate{$_}} > 1;
             my @generator = split /\s+/, $generate{$dest}->[0];
             my $gen = $generator[0];
-            $generator[0] = cleanfile($sourced, $gen, $blddir);
+            $generator[0] = cleanfile($sourced, $gen, $blddir, 1);
 
             # If the generator is itself generated, it's in the build tree
             if ($generate{$gen} || ! -f $generator[0]) {
@@ -2384,6 +2375,10 @@ EOF
             $check_generate{$ddest}->{$generator[0]}++;
 
             $unified_info{generate}->{$ddest} = [ @generator ];
+            # Fix up associated attributes
+            $unified_info{attributes}->{generate}->{$ddest} =
+                $attributes{generate}->{$dest}->{$gen}
+                if defined $attributes{generate}->{$dest}->{$gen};
         }
 
         foreach (keys %depends) {
@@ -2397,7 +2392,7 @@ EOF
             } elsif ($dest eq '') {
                 $ddest = '';
             } else {
-                $ddest = cleanfile($sourced, $_, $blddir);
+                $ddest = cleanfile($sourced, $_, $blddir, 1);
 
                 # If the destination doesn't exist in source, it can only be
                 # a generated file in the build tree.
@@ -2406,7 +2401,7 @@ EOF
                 }
             }
             foreach (@{$depends{$dest}}) {
-                my $d = cleanfile($sourced, $_, $blddir);
+                my $d = cleanfile($sourced, $_, $blddir, 1);
                 my $d2 = cleanfile($buildd, $_, $blddir);
 
                 # If we know it's generated, or assume it is because we can't
@@ -2429,7 +2424,7 @@ EOF
 
         foreach (keys %includes) {
             my $dest = $_;
-            my $ddest = cleanfile($sourced, $_, $blddir);
+            my $ddest = cleanfile($sourced, $_, $blddir, 1);
 
             # If the destination doesn't exist in source, it can only be
             # a generated file in the build tree.
@@ -2437,7 +2432,7 @@ EOF
                 $ddest = cleanfile($buildd, $_, $blddir);
             }
             foreach (@{$includes{$dest}}) {
-                my $is = cleandir($sourced, $_, $blddir);
+                my $is = cleandir($sourced, $_, $blddir, 1);
                 my $ib = cleandir($buildd, $_, $blddir);
                 push @{$unified_info{includes}->{$ddest}->{source}}, $is
                     unless grep { $_ eq $is } @{$unified_info{includes}->{$ddest}->{source}};
@@ -2450,7 +2445,7 @@ EOF
             my $ddest;
 
             if ($dest ne "") {
-                $ddest = cleanfile($sourced, $dest, $blddir);
+                $ddest = cleanfile($sourced, $dest, $blddir, 1);
 
                 # If the destination doesn't exist in source, it can only
                 # be a generated file in the build tree.
@@ -2774,7 +2769,7 @@ EOF
                                   keys %{$unified_info{htmldocs} // {}}),
                                  (map { @{$unified_info{mandocs}->{$_} // []} }
                                   keys %{$unified_info{mandocs} // {}}) ] );
-    foreach my $type (keys %loopinfo) {
+    foreach my $type (sort keys %loopinfo) {
         foreach my $product (@{$loopinfo{$type}}) {
             my %dirs = ();
             my $pd = dirname($product);
@@ -2795,7 +2790,7 @@ EOF
                 push @{$unified_info{dirinfo}->{$d}->{deps}}, $_
                     if $d ne $pd;
             }
-            foreach (keys %dirs) {
+            foreach (sort keys %dirs) {
                 push @{$unified_info{dirinfo}->{$_}->{products}->{$type}},
                     $product;
             }
@@ -2830,10 +2825,9 @@ my %template_vars = (
     user_crossable => \@user_crossable,
 );
 my $configdata_outname = 'configdata.pm';
-print "Creating $configdata_outname\n";
 open CONFIGDATA, ">$configdata_outname.new"
     or die "Trying to create $configdata_outname.new: $!";
-my $configdata_tmplname = cleanfile($srcdir, "configdata.pm.in", $blddir);
+my $configdata_tmplname = cleanfile($srcdir, "configdata.pm.in", $blddir, 1);
 my $configdata_tmpl =
     OpenSSL::Template->new(TYPE => 'FILE', SOURCE => $configdata_tmplname);
 $configdata_tmpl->fill_in(
@@ -2846,12 +2840,14 @@ $configdata_tmpl->fill_in(
               ] }
 ) or die $Text::Template::ERROR;
 close CONFIGDATA;
+
 rename "$configdata_outname.new", $configdata_outname;
 if ($builder_platform eq 'unix') {
     my $mode = (0755 & ~umask);
     chmod $mode, 'configdata.pm'
         or warn sprintf("WARNING: Couldn't change mode for 'configdata.pm' to 0%03o: %s\n",$mode,$!);
 }
+print "Created $configdata_outname\n";
 
 print "Running $configdata_outname\n";
 my $perlcmd = (quotify("maybeshell", $config{PERL}))[0];
@@ -2891,7 +2887,7 @@ exit(0);
 #
 sub death_handler {
     die @_ if $^S;              # To prevent the added message in eval blocks
-    my $build_file = $target{build_file} // "build file";
+    my $build_file = $config{build_file} // "build file";
     my @message = ( <<"_____", @_ );
 
 Failure!  $build_file wasn't produced.
@@ -3172,25 +3168,25 @@ sub resolve_config {
         }
     }
 
-    foreach (sort keys %all_keys) {
-        my $previous = $combined_inheritance{$_};
+    foreach my $key (sort keys %all_keys) {
+        my $previous = $combined_inheritance{$key};
 
         # Current target doesn't have a value for the current key?
         # Assign it the default combiner, the rest of this loop body
         # will handle it just like any other coderef.
-        if (!exists $table{$target}->{$_}) {
-            $table{$target}->{$_} = $default_combiner;
+        if (!exists $table{$target}->{$key}) {
+            $table{$target}->{$key} = $default_combiner;
         }
 
-        $table{$target}->{$_} = process_values($table{$target}->{$_},
-                                               $combined_inheritance{$_},
-                                               $target, $_);
-        unless(defined($table{$target}->{$_})) {
-            delete $table{$target}->{$_};
+        $table{$target}->{$key} = process_values($table{$target}->{$key},
+                                               $combined_inheritance{$key},
+                                               $target, $key);
+        unless(defined($table{$target}->{$key})) {
+            delete $table{$target}->{$key};
         }
 #        if ($extra_checks &&
-#            $previous && !($add_called ||  $previous ~~ $table{$target}->{$_})) {
-#            warn "$_ got replaced in $target\n";
+#            $previous && !($add_called ||  $previous ~~ $table{$target}->{$key})) {
+#            warn "$key got replaced in $target\n";
 #        }
     }
 
@@ -3407,6 +3403,13 @@ sub absolutedir {
     # it will return an incorrect directory spec if the argument is a
     # directory that doesn't exist.
     if ($^O eq "VMS") {
+        return rel2abs($dir);
+    }
+
+    # realpath() on Windows seems to check if the directory actually exists,
+    # which isn't what is wanted here.  All we want to know is if a directory
+    # spec is absolute, not if it exists.
+    if ($^O eq "MSWin32") {
         return rel2abs($dir);
     }
 

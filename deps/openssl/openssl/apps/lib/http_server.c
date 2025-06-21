@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -220,14 +220,17 @@ BIO *http_server_init_bio(const char *prog, const char *port)
 {
     BIO *acbio = NULL, *bufbio;
     int asock;
+    char name[40];
 
+    snprintf(name, sizeof(name), "[::]:%s", port); /* port may be "0" */
     bufbio = BIO_new(BIO_f_buffer());
     if (bufbio == NULL)
         goto err;
     acbio = BIO_new(BIO_s_accept());
     if (acbio == NULL
-        || BIO_set_bind_mode(acbio, BIO_BIND_REUSEADDR) < 0
-        || BIO_set_accept_port(acbio, port) < 0) {
+        || BIO_set_accept_ip_family(acbio, BIO_FAMILY_IPANY) <= 0 /* IPv4/6 */
+        || BIO_set_bind_mode(acbio, BIO_BIND_REUSEADDR) <= 0
+        || BIO_set_accept_name(acbio, name) <= 0) {
         log_message(prog, LOG_ERR, "Error setting up accept BIO");
         goto err;
     }
@@ -453,10 +456,11 @@ int http_server_get_asn1_req(const ASN1_ITEM *it, ASN1_VALUE **preq,
         }
         *line_end = '\0';
         /* https://tools.ietf.org/html/rfc7230#section-6.3 Persistence */
-        if (found_keep_alive != NULL && strcasecmp(key, "Connection") == 0) {
-            if (strcasecmp(value, "keep-alive") == 0)
+        if (found_keep_alive != NULL
+            && OPENSSL_strcasecmp(key, "Connection") == 0) {
+            if (OPENSSL_strcasecmp(value, "keep-alive") == 0)
                 *found_keep_alive = 1;
-            else if (strcasecmp(value, "close") == 0)
+            else if (OPENSSL_strcasecmp(value, "close") == 0)
                 *found_keep_alive = 0;
         }
     }

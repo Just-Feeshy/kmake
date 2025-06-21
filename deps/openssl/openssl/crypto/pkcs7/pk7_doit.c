@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -84,7 +84,11 @@ static int pkcs7_bio_add_digest(BIO **pbio, X509_ALGOR *alg,
     }
     (void)ERR_pop_to_mark();
 
-    BIO_set_md(btmp, md);
+    if (BIO_set_md(btmp, md) <= 0) {
+        ERR_raise(ERR_LIB_PKCS7, ERR_R_BIO_LIB);
+        EVP_MD_free(fetched);
+        goto err;
+    }
     EVP_MD_free(fetched);
     if (*pbio == NULL)
         *pbio = btmp;
@@ -330,7 +334,7 @@ BIO *PKCS7_dataInit(PKCS7 *p7, BIO *bio)
                 if (xalg->parameter == NULL)
                     goto err;
             }
-            if (EVP_CIPHER_param_to_asn1(ctx, xalg->parameter) < 0)
+            if (EVP_CIPHER_param_to_asn1(ctx, xalg->parameter) <= 0)
                 goto err;
         }
 
@@ -522,7 +526,11 @@ BIO *PKCS7_dataDecode(PKCS7 *p7, EVP_PKEY *pkey, BIO *in_bio, X509 *pcert)
             }
             (void)ERR_pop_to_mark();
 
-            BIO_set_md(btmp, md);
+            if (BIO_set_md(btmp, md) <= 0) {
+                EVP_MD_free(evp_md);
+                ERR_raise(ERR_LIB_PKCS7, ERR_R_BIO_LIB);
+                goto err;
+            }
             EVP_MD_free(evp_md);
             if (out == NULL)
                 out = btmp;
@@ -588,7 +596,7 @@ BIO *PKCS7_dataDecode(PKCS7 *p7, EVP_PKEY *pkey, BIO *in_bio, X509 *pcert)
         BIO_get_cipher_ctx(etmp, &evp_ctx);
         if (EVP_CipherInit_ex(evp_ctx, cipher, NULL, NULL, NULL, 0) <= 0)
             goto err;
-        if (EVP_CIPHER_asn1_to_param(evp_ctx, enc_alg->parameter) < 0)
+        if (EVP_CIPHER_asn1_to_param(evp_ctx, enc_alg->parameter) <= 0)
             goto err;
         /* Generate random key as MMA defence */
         len = EVP_CIPHER_CTX_get_key_length(evp_ctx);
@@ -612,7 +620,7 @@ BIO *PKCS7_dataDecode(PKCS7 *p7, EVP_PKEY *pkey, BIO *in_bio, X509 *pcert)
              * length. The key length is determined by the size of the
              * decrypted RSA key.
              */
-            if (!EVP_CIPHER_CTX_set_key_length(evp_ctx, eklen)) {
+            if (EVP_CIPHER_CTX_set_key_length(evp_ctx, eklen) <= 0) {
                 /* Use random key as MMA defence */
                 OPENSSL_clear_free(ek, eklen);
                 ek = tkey;
@@ -1015,6 +1023,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
     STACK_OF(X509_ATTRIBUTE) *sk;
     BIO *btmp;
     EVP_PKEY *pkey;
+    unsigned char *abuf = NULL;
     const PKCS7_CTX *ctx = ossl_pkcs7_get0_ctx(p7);
     OSSL_LIB_CTX *libctx = ossl_pkcs7_ctx_get0_libctx(ctx);
     const char *propq = ossl_pkcs7_ctx_get0_propq(ctx);
@@ -1064,7 +1073,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
 
     sk = si->auth_attr;
     if ((sk != NULL) && (sk_X509_ATTRIBUTE_num(sk) != 0)) {
-        unsigned char md_dat[EVP_MAX_MD_SIZE], *abuf = NULL;
+        unsigned char md_dat[EVP_MAX_MD_SIZE];
         unsigned int md_len;
         int alen;
         ASN1_OCTET_STRING *message_digest;
@@ -1106,8 +1115,6 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
         }
         if (!EVP_VerifyUpdate(mdc_tmp, abuf, alen))
             goto err;
-
-        OPENSSL_free(abuf);
     }
 
     os = si->enc_digest;
@@ -1125,6 +1132,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
     }
     ret = 1;
  err:
+    OPENSSL_free(abuf);
     EVP_MD_CTX_free(mdc_tmp);
     EVP_MD_free(fetched_md);
     return ret;
@@ -1231,36 +1239,29 @@ static int add_attribute(STACK_OF(X509_ATTRIBUTE) **sk, int nid, int atrtype,
                          void *value)
 {
     X509_ATTRIBUTE *attr = NULL;
+    int i, n;
 
     if (*sk == NULL) {
         if ((*sk = sk_X509_ATTRIBUTE_new_null()) == NULL)
             return 0;
- new_attrib:
-        if ((attr = X509_ATTRIBUTE_create(nid, atrtype, value)) == NULL)
-            return 0;
-        if (!sk_X509_ATTRIBUTE_push(*sk, attr)) {
-            X509_ATTRIBUTE_free(attr);
-            return 0;
-        }
-    } else {
-        int i;
-
-        for (i = 0; i < sk_X509_ATTRIBUTE_num(*sk); i++) {
-            attr = sk_X509_ATTRIBUTE_value(*sk, i);
-            if (OBJ_obj2nid(X509_ATTRIBUTE_get0_object(attr)) == nid) {
-                X509_ATTRIBUTE_free(attr);
-                attr = X509_ATTRIBUTE_create(nid, atrtype, value);
-                if (attr == NULL)
-                    return 0;
-                if (!sk_X509_ATTRIBUTE_set(*sk, i, attr)) {
-                    X509_ATTRIBUTE_free(attr);
-                    return 0;
-                }
-                goto end;
-            }
-        }
-        goto new_attrib;
     }
+    n = sk_X509_ATTRIBUTE_num(*sk);
+    for (i = 0; i < n; i++) {
+        attr = sk_X509_ATTRIBUTE_value(*sk, i);
+        if (OBJ_obj2nid(X509_ATTRIBUTE_get0_object(attr)) == nid)
+            goto end;
+    }
+    if (!sk_X509_ATTRIBUTE_push(*sk, NULL))
+        return 0;
+
  end:
+    attr = X509_ATTRIBUTE_create(nid, atrtype, value);
+    if (attr == NULL) {
+        if (i == n)
+            sk_X509_ATTRIBUTE_pop(*sk);
+        return 0;
+    }
+    X509_ATTRIBUTE_free(sk_X509_ATTRIBUTE_value(*sk, i));
+    (void) sk_X509_ATTRIBUTE_set(*sk, i, attr);
     return 1;
 }

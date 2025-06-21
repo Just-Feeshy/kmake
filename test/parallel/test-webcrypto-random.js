@@ -7,7 +7,7 @@ if (!common.hasCrypto)
 
 const { Buffer } = require('buffer');
 const assert = require('assert');
-const { getRandomValues } = require('crypto').webcrypto;
+const { crypto } = globalThis;
 
 [
   undefined, null, '', 1, {}, [],
@@ -16,14 +16,14 @@ const { getRandomValues } = require('crypto').webcrypto;
   new DataView(new ArrayBuffer(1)),
 ].forEach((i) => {
   assert.throws(
-    () => getRandomValues(i),
+    () => crypto.getRandomValues(i),
     { name: 'TypeMismatchError', code: 17 },
   );
 });
 
 {
   const buf = new Uint8Array(0);
-  getRandomValues(buf);
+  crypto.getRandomValues(buf);
 }
 
 const intTypedConstructors = [
@@ -41,16 +41,16 @@ const intTypedConstructors = [
 for (const ctor of intTypedConstructors) {
   const buf = new ctor(10);
   const before = Buffer.from(buf.buffer).toString('hex');
-  getRandomValues(buf);
+  crypto.getRandomValues(buf);
   const after = Buffer.from(buf.buffer).toString('hex');
   assert.notStrictEqual(before, after);
 }
 
 {
-  const buf = new Uint16Array(10);
-  const before = Buffer.from(buf).toString('hex');
-  getRandomValues(buf);
-  const after = Buffer.from(buf).toString('hex');
+  const buf = Buffer.alloc(10);
+  const before = buf.toString('hex');
+  crypto.getRandomValues(buf);
+  const after = buf.toString('hex');
   assert.notStrictEqual(before, after);
 }
 
@@ -63,8 +63,14 @@ for (const ctor of intTypedConstructors) {
   }
 
   if (kData !== undefined) {
-    assert.throws(() => getRandomValues(kData), {
-      code: 22
-    });
+    assert.throws(
+      () => crypto.getRandomValues(kData),
+      { name: 'QuotaExceededError', code: 22 },
+    );
   }
+}
+
+{
+  const typedArray = new Uint8Array(32);
+  assert.strictEqual(crypto.getRandomValues(typedArray), typedArray);
 }

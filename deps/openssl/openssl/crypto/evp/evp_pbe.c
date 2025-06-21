@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -136,7 +136,7 @@ int EVP_PBE_CipherInit_ex(ASN1_OBJECT *pbe_obj, const char *pass, int passlen,
         md = md_fetch = EVP_MD_fetch(libctx, OBJ_nid2sn(md_nid), propq);
         /* Fallback to legacy method */
         if (md == NULL)
-            EVP_get_digestbynid(md_nid);
+            md = EVP_get_digestbynid(md_nid);
 
         if (md == NULL) {
             (void)ERR_clear_last_mark();
@@ -200,7 +200,7 @@ int EVP_PBE_alg_add_type(int pbe_type, int pbe_nid, int cipher_nid,
             goto err;
     }
 
-    if ((pbe_tmp = OPENSSL_malloc(sizeof(*pbe_tmp))) == NULL)
+    if ((pbe_tmp = OPENSSL_zalloc(sizeof(*pbe_tmp))) == NULL)
         goto err;
 
     pbe_tmp->pbe_type = pbe_type;

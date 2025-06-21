@@ -28,7 +28,6 @@ if (!common.hasCrypto)
 
 const assert = require('assert');
 const crypto = require('crypto');
-const cryptop = require('crypto').webcrypto;
 const { kMaxLength } = require('buffer');
 
 const kMaxInt32 = 2 ** 31 - 1;
@@ -107,7 +106,7 @@ common.expectWarning('DeprecationWarning',
     new Uint32Array(10),
   ].forEach((buf) => {
     const before = Buffer.from(buf.buffer).toString('hex');
-    cryptop.getRandomValues(buf);
+    globalThis.crypto.getRandomValues(buf);
     const after = Buffer.from(buf.buffer).toString('hex');
     assert.notStrictEqual(before, after);
   });
@@ -338,7 +337,6 @@ assert.throws(
   const desc = Object.getOwnPropertyDescriptor(crypto, f);
   assert.ok(desc);
   assert.strictEqual(desc.configurable, true);
-  assert.strictEqual(desc.writable, true);
   assert.strictEqual(desc.enumerable, false);
 });
 

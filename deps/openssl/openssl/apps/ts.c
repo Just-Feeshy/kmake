@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -535,15 +535,18 @@ static int create_digest(BIO *input, const char *digest, const EVP_MD *md,
 
         *md_value = OPENSSL_hexstr2buf(digest, &digest_len);
         if (*md_value == NULL || md_value_len != digest_len) {
-            OPENSSL_free(*md_value);
-            *md_value = NULL;
             BIO_printf(bio_err, "bad digest, %d bytes "
                        "must be specified\n", md_value_len);
-            return 0;
+            goto err;
         }
     }
     rv = md_value_len;
  err:
+    if (rv <= 0) {
+        OPENSSL_free(*md_value);
+        *md_value = NULL;
+        rv = 0;
+    }
     EVP_MD_CTX_free(md_ctx);
     return rv;
 }
@@ -976,6 +979,10 @@ static X509_STORE *create_cert_store(const char *CApath, const char *CAfile,
     const char *propq = app_get0_propq();
 
     cert_ctx = X509_STORE_new();
+    if (cert_ctx == NULL) {
+        BIO_printf(bio_err, "memory allocation failure\n");
+        return NULL;
+    }
     X509_STORE_set_verify_cb(cert_ctx, verify_cb);
     if (CApath != NULL) {
         lookup = X509_STORE_add_lookup(cert_ctx, X509_LOOKUP_hash_dir());
@@ -983,7 +990,7 @@ static X509_STORE *create_cert_store(const char *CApath, const char *CAfile,
             BIO_printf(bio_err, "memory allocation failure\n");
             goto err;
         }
-        if (!X509_LOOKUP_add_dir(lookup, CApath, X509_FILETYPE_PEM)) {
+        if (X509_LOOKUP_add_dir(lookup, CApath, X509_FILETYPE_PEM) <= 0) {
             BIO_printf(bio_err, "Error loading directory %s\n", CApath);
             goto err;
         }
@@ -995,8 +1002,8 @@ static X509_STORE *create_cert_store(const char *CApath, const char *CAfile,
             BIO_printf(bio_err, "memory allocation failure\n");
             goto err;
         }
-        if (!X509_LOOKUP_load_file_ex(lookup, CAfile, X509_FILETYPE_PEM, libctx,
-                                      propq)) {
+        if (X509_LOOKUP_load_file_ex(lookup, CAfile, X509_FILETYPE_PEM, libctx,
+                                      propq) <= 0) {
             BIO_printf(bio_err, "Error loading file %s\n", CAfile);
             goto err;
         }
@@ -1008,7 +1015,7 @@ static X509_STORE *create_cert_store(const char *CApath, const char *CAfile,
             BIO_printf(bio_err, "memory allocation failure\n");
             goto err;
         }
-        if (!X509_LOOKUP_load_store_ex(lookup, CAstore, libctx, propq)) {
+        if (X509_LOOKUP_load_store_ex(lookup, CAstore, libctx, propq) <= 0) {
             BIO_printf(bio_err, "Error loading store URI %s\n", CAstore);
             goto err;
         }

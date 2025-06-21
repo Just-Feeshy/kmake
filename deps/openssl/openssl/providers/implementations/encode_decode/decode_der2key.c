@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -32,6 +32,7 @@
 #include "crypto/ecx.h"
 #include "crypto/rsa.h"
 #include "crypto/x509.h"
+#include "openssl/obj_mac.h"
 #include "prov/bio.h"
 #include "prov/implementations.h"
 #include "endecoder_local.h"
@@ -107,7 +108,10 @@ static void *der2key_decode_p8(const unsigned char **input_der,
 
     if ((p8inf = d2i_PKCS8_PRIV_KEY_INFO(NULL, input_der, input_der_len)) != NULL
         && PKCS8_pkey_get0(NULL, NULL, NULL, &alg, p8inf)
-        && OBJ_obj2nid(alg->algorithm) == ctx->desc->evp_type)
+        && (OBJ_obj2nid(alg->algorithm) == ctx->desc->evp_type
+            /* Allow decoding sm2 private key with id_ecPublicKey */
+            || (OBJ_obj2nid(alg->algorithm) == NID_X9_62_id_ecPublicKey
+                && ctx->desc->evp_type == NID_sm2)))
         key = key_from_pkcs8(p8inf, PROV_LIBCTX_OF(ctx->provctx), NULL);
     PKCS8_PRIV_KEY_INFO_free(p8inf);
 
@@ -204,36 +208,49 @@ static int der2key_decode(void *vctx, OSSL_CORE_BIO *cin, int selection,
     if (!ok)
         goto next;
 
-    ok = 0;                      /* Assume that we fail */
+    ok = 0; /* Assume that we fail */
 
+    ERR_set_mark();
     if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
         derp = der;
         if (ctx->desc->d2i_PKCS8 != NULL) {
             key = ctx->desc->d2i_PKCS8(NULL, &derp, der_len, ctx);
-            if (ctx->flag_fatal)
+            if (ctx->flag_fatal) {
+                ERR_clear_last_mark();
                 goto end;
+            }
         } else if (ctx->desc->d2i_private_key != NULL) {
             key = ctx->desc->d2i_private_key(NULL, &derp, der_len);
         }
-        if (key == NULL && ctx->selection != 0)
+        if (key == NULL && ctx->selection != 0) {
+            ERR_clear_last_mark();
             goto next;
+        }
     }
     if (key == NULL && (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
         derp = der;
         if (ctx->desc->d2i_PUBKEY != NULL)
             key = ctx->desc->d2i_PUBKEY(NULL, &derp, der_len);
-        else
+        else if (ctx->desc->d2i_public_key != NULL)
             key = ctx->desc->d2i_public_key(NULL, &derp, der_len);
-        if (key == NULL && ctx->selection != 0)
+        if (key == NULL && ctx->selection != 0) {
+            ERR_clear_last_mark();
             goto next;
+        }
     }
     if (key == NULL && (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS) != 0) {
         derp = der;
         if (ctx->desc->d2i_key_params != NULL)
             key = ctx->desc->d2i_key_params(NULL, &derp, der_len);
-        if (key == NULL && ctx->selection != 0)
+        if (key == NULL && ctx->selection != 0) {
+            ERR_clear_last_mark();
             goto next;
+        }
     }
+    if (key == NULL)
+        ERR_clear_last_mark();
+    else
+        ERR_pop_to_mark();
 
     /*
      * Last minute check to see if this was the correct type of key.  This
@@ -273,10 +290,19 @@ static int der2key_decode(void *vctx, OSSL_CORE_BIO *cin, int selection,
 
         params[0] =
             OSSL_PARAM_construct_int(OSSL_OBJECT_PARAM_TYPE, &object_type);
-        params[1] =
-            OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
-                                             (char *)ctx->desc->keytype_name,
-                                             0);
+
+#ifndef OPENSSL_NO_SM2
+        if (strcmp(ctx->desc->keytype_name, "EC") == 0
+            && (EC_KEY_get_flags(key) & EC_FLAG_SM2_RANGE) != 0)
+            params[1] =
+                OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
+                                                 "SM2", 0);
+        else
+#endif
+            params[1] =
+                OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
+                                                 (char *)ctx->desc->keytype_name,
+                                                 0);
         /* The address of the key becomes the octet string */
         params[2] =
             OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE,
@@ -303,10 +329,14 @@ static int der2key_export_object(void *vctx,
     void *keydata;
 
     if (reference_sz == sizeof(keydata) && export != NULL) {
+        int selection = ctx->selection;
+
+        if (selection == 0)
+            selection = OSSL_KEYMGMT_SELECT_ALL;
         /* The contents of the reference is the address to our object */
         keydata = *(void **)reference;
 
-        return export(keydata, ctx->selection, export_cb, export_cbarg);
+        return export(keydata, selection, export_cb, export_cbarg);
     }
     return 0;
 }
@@ -361,7 +391,7 @@ static void *dsa_d2i_PKCS8(void **key, const unsigned char **der, long der_len,
                              (key_from_pkcs8_t *)ossl_dsa_key_from_pkcs8);
 }
 
-# define dsa_d2i_PUBKEY                 (d2i_of_void *)d2i_DSA_PUBKEY
+# define dsa_d2i_PUBKEY                 (d2i_of_void *)ossl_d2i_DSA_PUBKEY
 # define dsa_free                       (free_key_fn *)DSA_free
 # define dsa_check                      NULL
 
@@ -392,10 +422,16 @@ static void *ec_d2i_PKCS8(void **key, const unsigned char **der, long der_len,
 static int ec_check(void *key, struct der2key_ctx_st *ctx)
 {
     /* We're trying to be clever by comparing two truths */
-
+    int ret = 0;
     int sm2 = (EC_KEY_get_flags(key) & EC_FLAG_SM2_RANGE) != 0;
 
-    return sm2 == (ctx->desc->evp_type == EVP_PKEY_SM2);
+    if (sm2)
+        ret = ctx->desc->evp_type == EVP_PKEY_SM2
+            || ctx->desc->evp_type == NID_X9_62_id_ecPublicKey;
+    else
+        ret = ctx->desc->evp_type != EVP_PKEY_SM2;
+
+    return ret;
 }
 
 static void ec_adjust(void *key, struct der2key_ctx_st *ctx)

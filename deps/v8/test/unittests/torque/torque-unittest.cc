@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <optional>
+
 #include "src/torque/torque-compiler.h"
 #include "src/torque/utils.h"
 #include "test/unittests/test-utils.h"
@@ -19,6 +21,8 @@ namespace {
 constexpr const char* kTestTorquePrelude = R"(
 type void;
 type never;
+
+type IntegerLiteral constexpr 'IntegerLiteral';
 
 namespace torque_internal {
   struct Reference<T: type> {
@@ -40,7 +44,7 @@ namespace torque_internal {
 
 type Tagged generates 'TNode<MaybeObject>' constexpr 'MaybeObject';
 type StrongTagged extends Tagged
-    generates 'TNode<Object>' constexpr 'ObjectPtr';
+    generates 'TNode<Object>' constexpr 'Object';
 type Smi extends StrongTagged generates 'TNode<Smi>' constexpr 'Smi';
 type WeakHeapObject extends Tagged;
 type Weak<T : type extends HeapObject> extends WeakHeapObject;
@@ -82,7 +86,12 @@ type string constexpr 'const char*';
 type RawPtr generates 'TNode<RawPtrT>' constexpr 'void*';
 type ExternalPointer
     generates 'TNode<ExternalPointerT>' constexpr 'ExternalPointer_t';
-type Code extends HeapObject generates 'TNode<Code>';
+type CppHeapPointer
+    generates 'TNode<CppHeapPointerT>' constexpr 'CppHeapPointer_t';
+type TrustedPointer
+    generates 'TNode<TrustedPointerT>' constexpr 'TrustedPointer_t';
+type ProtectedPointer extends Tagged;
+type InstructionStream extends HeapObject generates 'TNode<InstructionStream>';
 type BuiltinPtr extends Smi generates 'TNode<BuiltinPtr>';
 type Context extends HeapObject generates 'TNode<Context>';
 type NativeContext extends Context;
@@ -92,7 +101,8 @@ type HeapNumber extends HeapObject;
 type FixedArrayBase extends HeapObject;
 type Lazy<T: type>;
 
-struct float64_or_hole {
+struct float64_or_undefined_or_hole {
+  is_undefined: bool;
   is_hole: bool;
   value: float64;
 }
@@ -112,6 +122,8 @@ extern macro TaggedToHeapObject(Object): HeapObject
 extern macro Float64SilenceNaN(float64): float64;
 
 extern macro IntPtrConstant(constexpr int31): intptr;
+extern macro ConstexprIntegerLiteralToInt32(constexpr IntegerLiteral): constexpr int32;
+extern macro SmiFromInt32(int32): Smi;
 
 macro FromConstexpr<To: type, From: type>(o: From): To;
 FromConstexpr<Smi, constexpr Smi>(s: constexpr Smi): Smi {
@@ -132,6 +144,15 @@ FromConstexpr<bool, constexpr bool>(b: constexpr bool): bool {
 }
 FromConstexpr<int32, constexpr int31>(i: constexpr int31): int32 {
   return %FromConstexpr<int32>(i);
+}
+FromConstexpr<int32, constexpr int32>(i: constexpr int32): int32 {
+  return %FromConstexpr<int32>(i);
+}
+FromConstexpr<int32, constexpr IntegerLiteral>(i: constexpr IntegerLiteral): int32 {
+  return FromConstexpr<int32>(ConstexprIntegerLiteralToInt32(i));
+}
+FromConstexpr<Smi, constexpr IntegerLiteral>(i: constexpr IntegerLiteral): Smi {
+  return SmiFromInt32(FromConstexpr<int32>(i));
 }
 
 macro Cast<A : type extends Object>(implicit context: Context)(o: Object): A
@@ -184,7 +205,7 @@ void ExpectFailingCompilation(std::string source,
   for (size_t i = 0; i < limit; ++i) {
     EXPECT_THAT(result.messages[i].message, message_patterns[i].first);
     if (message_patterns[i].second != LineAndColumn::Invalid()) {
-      base::Optional<SourcePosition> actual = result.messages[i].position;
+      std::optional<SourcePosition> actual = result.messages[i].position;
       EXPECT_TRUE(actual.has_value());
       EXPECT_EQ(actual->start, message_patterns[i].second);
     }
@@ -610,7 +631,7 @@ TEST(Torque, Enums) {
     extern enum MyEnum {
       kValue0,
       kValue1,
-      kValue2,
+      @sameEnumValueAs(kValue0) kValue2,
       kValue3
     }
   )");
@@ -960,6 +981,41 @@ TEST(Torque, ImplicitTemplateParameterInference) {
     }
   )",
       HasSubstr("ambiguous callable"));
+}
+
+TEST(Torque, BuiltinReturnsNever) {
+  ExpectFailingCompilation(
+      "builtin Never(): never {}",
+      HasSubstr("control reaches end of builtin, expected return of a value"));
+  ExpectFailingCompilation(
+      "builtin Never(): never { return 1; }",
+      HasSubstr("cannot return from a function with return type never"));
+  ExpectFailingCompilation(
+      R"(
+    extern macro Throw(): never;
+    builtin Never(): never {
+      Throw();
+    }
+    builtin CallsNever(): Smi {
+      Never();
+      return 1;
+    }
+  )",
+      HasSubstr("statement after non-returning statement"));
+
+  ExpectSuccessfulCompilation(
+      "extern macro Throw(): never;"
+      "builtin Never(): never { Throw(); }");
+  ExpectSuccessfulCompilation(R"(
+    extern macro Throw(): never;
+    builtin Never(implicit c: Context, a: int32)(): never {
+      if(a == 1) {
+        Throw();
+      } else {
+        Throw();
+      }
+    }
+  )");
 }
 
 }  // namespace torque

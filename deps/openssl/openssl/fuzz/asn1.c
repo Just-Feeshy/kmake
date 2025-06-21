@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -218,8 +218,10 @@ static ASN1_PCTX *pctx;
         int len2; \
         BIO *bio = BIO_new(BIO_s_null()); \
         \
-        PRINT(bio, type); \
-        BIO_free(bio); \
+        if (bio != NULL) { \
+            PRINT(bio, type); \
+            BIO_free(bio); \
+        } \
         len2 = I2D(type, &der); \
         if (len2 != 0) {} \
         OPENSSL_free(der); \
@@ -235,8 +237,10 @@ static ASN1_PCTX *pctx;
     if (type != NULL) { \
         BIO *bio = BIO_new(BIO_s_null()); \
         \
-        PRINT(bio, type, 0); \
-        BIO_free(bio); \
+        if (bio != NULL) { \
+            PRINT(bio, type, 0); \
+            BIO_free(bio); \
+        } \
         I2D(type, &der); \
         OPENSSL_free(der); \
         TYPE ## _free(type); \
@@ -251,8 +255,10 @@ static ASN1_PCTX *pctx;
     if (type != NULL) { \
         BIO *bio = BIO_new(BIO_s_null()); \
         \
-        PRINT(bio, type, 0, pctx); \
-        BIO_free(bio); \
+        if (bio != NULL) { \
+            PRINT(bio, type, 0, pctx); \
+            BIO_free(bio); \
+        } \
         I2D(type, &der); \
         OPENSSL_free(der); \
         TYPE ## _free(type); \
@@ -306,12 +312,20 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
         ASN1_VALUE *o = ASN1_item_d2i(NULL, &b, len, i);
 
         if (o != NULL) {
-            BIO *bio = BIO_new(BIO_s_null());
-
-            ASN1_item_print(bio, o, 4, i, pctx);
-            BIO_free(bio);
-            ASN1_item_i2d(o, &der, i);
-            OPENSSL_free(der);
+            /*
+             * Don't print excessively long output to prevent spurious fuzzer
+             * timeouts.
+             */
+            if (b - buf < 10000) {
+                BIO *bio = BIO_new(BIO_s_null());
+                if (bio != NULL) {
+                    ASN1_item_print(bio, o, 4, i, pctx);
+                    BIO_free(bio);
+                }
+            }
+            if (ASN1_item_i2d(o, &der, i) > 0) {
+                OPENSSL_free(der);
+            }
             ASN1_item_free(o, i);
         }
     }

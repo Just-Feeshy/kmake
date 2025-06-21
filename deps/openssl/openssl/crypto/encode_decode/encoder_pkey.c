@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,7 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include "e_os.h"                /* strcasecmp on Windows */
 #include <openssl/err.h>
 #include <openssl/ui.h>
 #include <openssl/params.h>
@@ -187,9 +186,13 @@ encoder_construct_pkey(OSSL_ENCODER_INSTANCE *encoder_inst, void *arg)
         const OSSL_PROVIDER *e_prov = OSSL_ENCODER_get0_provider(encoder);
 
         if (k_prov != e_prov) {
+            int selection = data->selection;
+
+            if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
+                selection |= OSSL_KEYMGMT_SELECT_PUBLIC_KEY;
             data->encoder_inst = encoder_inst;
 
-            if (!evp_keymgmt_export(pk->keymgmt, pk->keydata, data->selection,
+            if (!evp_keymgmt_export(pk->keymgmt, pk->keydata, selection,
                                     &encoder_import_cb, data))
                 return NULL;
             data->obj = data->constructed_obj;
@@ -254,6 +257,11 @@ static int ossl_encoder_ctx_setup_for_pkey(OSSL_ENCODER_CTX *ctx,
          * First, collect the keymgmt names, then the encoders that match.
          */
         keymgmt_data.names = sk_OPENSSL_CSTRING_new_null();
+        if (keymgmt_data.names == NULL) {
+            ERR_raise(ERR_LIB_OSSL_ENCODER, ERR_R_MALLOC_FAILURE);
+            goto err;
+        }
+
         keymgmt_data.error_occurred = 0;
         EVP_KEYMGMT_names_do_all(pkey->keymgmt, collect_name, &keymgmt_data);
         if (keymgmt_data.error_occurred) {

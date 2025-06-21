@@ -1,7 +1,10 @@
 // Flags: --expose-internals
 'use strict';
 const common = require('../common');
-common.skipIfDumbTerminal();
+
+if (process.env.TERM === 'dumb') {
+  common.skip('skipping - dumb terminal');
+}
 
 const assert = require('assert');
 const readline = require('readline/promises');
@@ -22,7 +25,7 @@ class FakeInput extends EventEmitter {
 function isWarned(emitter) {
   for (const name in emitter) {
     const listeners = emitter[name];
-    if (listeners.warned) return true;
+    if (listeners?.warned) return true;
   }
   return false;
 }
@@ -103,7 +106,7 @@ function assertCursorRowsAndCols(rli, rows, cols) {
   });
 
   // Constructor throws if historySize is not a positive number
-  ['not a number', -1, NaN, {}, true, Symbol(), null].forEach((historySize) => {
+  [-1, NaN].forEach((historySize) => {
     assert.throws(() => {
       readline.createInterface({
         input,
@@ -111,7 +114,20 @@ function assertCursorRowsAndCols(rli, rows, cols) {
       });
     }, {
       name: 'RangeError',
-      code: 'ERR_INVALID_ARG_VALUE'
+      code: 'ERR_OUT_OF_RANGE',
+    });
+  });
+
+  // Constructor throws if type of historySize is not a number
+  ['not a number', {}, true, Symbol(), null].forEach((historySize) => {
+    assert.throws(() => {
+      readline.createInterface({
+        input,
+        historySize,
+      });
+    }, {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_TYPE',
     });
   });
 
@@ -121,11 +137,7 @@ function assertCursorRowsAndCols(rli, rows, cols) {
       input,
       tabSize: 0
     }),
-    {
-      message: 'The value of "tabSize" is out of range. ' +
-                'It must be >= 1 && < 4294967296. Received 0',
-      code: 'ERR_OUT_OF_RANGE'
-    }
+    { code: 'ERR_OUT_OF_RANGE' }
   );
 
   assert.throws(
@@ -192,7 +204,7 @@ function assertCursorRowsAndCols(rli, rows, cols) {
     fi.emit('data', character);
   }
   fi.emit('data', '\n');
-  rli.close();
+  fi.end();
 }
 
 // \t when there is no completer function should behave like an ordinary
@@ -913,6 +925,17 @@ for (let i = 0; i < 12; i++) {
     rli.close();
   }
 
+  // Calling the question callback with abort signal
+  {
+    const [rli] = getInterface({ terminal });
+    const { signal } = new AbortController();
+    rli.question('foo?', { signal }).then(common.mustCall((answer) => {
+      assert.strictEqual(answer, 'bar');
+    }));
+    rli.write('bar\n');
+    rli.close();
+  }
+
   // Aborting a question
   {
     const ac = new AbortController();
@@ -926,6 +949,22 @@ for (let i = 0; i < 12; i++) {
     ac.abort();
     rli.write('bar\n');
     rli.close();
+  }
+
+  // Aborting a question with ctrl+C
+  {
+    const [rli, fi] = getInterface({ terminal: true });
+    assert.rejects(rli.question('hello?'), { name: 'AbortError' })
+        .then(common.mustCall());
+    fi.emit('keypress', '.', { ctrl: true, name: 'c' });
+  }
+
+  // Aborting a question with ctrl+D
+  {
+    const [rli, fi] = getInterface({ terminal: true });
+    assert.rejects(rli.question('hello?'), { name: 'AbortError' })
+        .then(common.mustCall());
+    fi.emit('keypress', '.', { ctrl: true, name: 'd' });
   }
 
   (async () => {
@@ -951,6 +990,23 @@ for (let i = 0; i < 12; i++) {
     ).then(common.mustCall());
     rli.close();
   }
+
+  // Call question after close
+  {
+    const [rli, fi] = getInterface({ terminal });
+    rli.question('What\'s your name?').then(common.mustCall((name) => {
+      assert.strictEqual(name, 'Node.js');
+      rli.close();
+      rli.question('How are you?')
+        .then(common.mustNotCall(), common.expectsError({
+          code: 'ERR_USE_AFTER_CLOSE',
+          name: 'Error'
+        }));
+      assert.notStrictEqual(rli.getPrompt(), 'How are you?');
+    }));
+    fi.emit('data', 'Node.js\n');
+  }
+
 
   // Can create a new readline Interface with a null output argument
   {

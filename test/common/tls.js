@@ -3,6 +3,7 @@
 'use strict';
 const crypto = require('crypto');
 const net = require('net');
+const assert = require('assert');
 
 exports.ccs = Buffer.from('140303000101', 'hex');
 
@@ -52,7 +53,7 @@ class TestTLSSocket extends net.Socket {
   createClientKeyExchange() {
     const encrypted_pre_primary_secret = crypto.publicEncrypt({
       key: this.server_cert,
-      padding: crypto.constants.RSA_PKCS1_PADDING
+      padding: crypto.constants.RSA_PKCS1_PADDING,
     }, this.pre_primary_secret);
     const length = Buffer.alloc(2);
     length.writeUIntBE(encrypted_pre_primary_secret.length, 0, 2);
@@ -172,5 +173,17 @@ function P_hash(algo, secret, seed, size) {
   }
   return result;
 }
+
+exports.assertIsCAArray = function assertIsCAArray(certs) {
+  assert(Array.isArray(certs));
+  assert(certs.length > 0);
+
+  // The certificates looks PEM-encoded.
+  for (const cert of certs) {
+    const trimmed = cert.trim();
+    assert.match(trimmed, /^-----BEGIN CERTIFICATE-----/);
+    assert.match(trimmed, /-----END CERTIFICATE-----$/);
+  }
+};
 
 exports.TestTLSSocket = TestTLSSocket;

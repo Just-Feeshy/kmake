@@ -1,10 +1,15 @@
 'use strict';
 const common = require('../common');
 
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
-if (!common.opensslCli)
+}
+
+const { opensslCli } = require('../common/crypto');
+
+if (!opensslCli) {
   common.skip('missing openssl cli');
+}
 
 const assert = require('assert');
 const tls = require('tls');
@@ -14,8 +19,9 @@ const { spawn } = require('child_process');
 const CIPHERS = 'PSK+HIGH';
 const KEY = 'd731ef57be09e5204f0b205b60627028';
 const IDENTITY = 'Client_identity';  // Hardcoded by `openssl s_server`
+const useIPv4 = !common.hasIPv6;
 
-const server = spawn(common.opensslCli, [
+const server = spawn(opensslCli, [
   's_server',
   '-accept', common.PORT,
   '-cipher', CIPHERS,
@@ -23,7 +29,19 @@ const server = spawn(common.opensslCli, [
   '-psk_hint', IDENTITY,
   '-nocert',
   '-rev',
-]);
+  ...(useIPv4 ? ['-4'] : []),
+], { encoding: 'utf8' });
+let serverErr = '';
+let serverOut = '';
+server.stderr.on('data', (data) => serverErr += data);
+server.stdout.on('data', (data) => serverOut += data);
+server.on('error', common.mustNotCall());
+server.on('exit', (code, signal) => {
+  // Server is expected to be terminated by cleanUp().
+  assert.strictEqual(code, null,
+                     `'${server.spawnfile} ${server.spawnargs.join(' ')}' unexpected exited with output:\n${serverOut}\n${serverErr}`);
+  assert.strictEqual(signal, 'SIGTERM');
+});
 
 const cleanUp = (err) => {
   clearTimeout(timeout);
@@ -33,7 +51,7 @@ const cleanUp = (err) => {
   process.exitCode = err ? 1 : 0;
 };
 
-const timeout = setTimeout(() => cleanUp('Timeouted'), 5000);
+const timeout = setTimeout(() => cleanUp('Timed out'), 5000);
 
 function waitForPort(port, cb) {
   const socket = net.connect(common.PORT, () => {

@@ -20,6 +20,14 @@ module.exports.isDefiningError = function(node) {
          node.expression.arguments.length !== 0;
 };
 
+module.exports.isDefiningDeprecation = function(node) {
+  return node.expression &&
+         node.expression.type === 'CallExpression' &&
+         node.expression.callee &&
+         node.expression.callee.name.endsWith('deprecate') &&
+         node.expression.arguments.length !== 0;
+};
+
 /**
  * Returns true if any of the passed in modules are used in
  * require calls.
@@ -92,9 +100,5 @@ module.exports.inSkipBlock = function(node) {
 };
 
 function hasSkip(expression) {
-  return expression &&
-         expression.callee &&
-         (expression.callee.name === 'skip' ||
-         expression.callee.property &&
-         expression.callee.property.name === 'skip');
+  return expression?.callee?.name === 'skip' || expression?.callee?.property?.name === 'skip';
 }

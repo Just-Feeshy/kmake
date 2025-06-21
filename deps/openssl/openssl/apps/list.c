@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -71,7 +71,7 @@ static void legacy_cipher_fn(const EVP_CIPHER *c,
 {
     if (select_name != NULL
         && (c == NULL
-            || strcasecmp(select_name,  EVP_CIPHER_get0_name(c)) != 0))
+            || OPENSSL_strcasecmp(select_name,  EVP_CIPHER_get0_name(c)) != 0))
         return;
     if (c != NULL) {
         BIO_printf(arg, "  %s\n", EVP_CIPHER_get0_name(c));
@@ -370,7 +370,7 @@ DEFINE_STACK_OF(EVP_RAND)
 
 static int rand_cmp(const EVP_RAND * const *a, const EVP_RAND * const *b)
 {
-    int ret = strcasecmp(EVP_RAND_get0_name(*a), EVP_RAND_get0_name(*b));
+    int ret = OPENSSL_strcasecmp(EVP_RAND_get0_name(*a), EVP_RAND_get0_name(*b));
 
     if (ret == 0)
         ret = strcmp(OSSL_PROVIDER_get0_name(EVP_RAND_get0_provider(*a)),
@@ -404,7 +404,7 @@ static void list_random_generators(void)
         const EVP_RAND *m = sk_EVP_RAND_value(rands, i);
 
         if (select_name != NULL
-            && strcasecmp(EVP_RAND_get0_name(m), select_name) != 0)
+            && OPENSSL_strcasecmp(EVP_RAND_get0_name(m), select_name) != 0)
             continue;
         BIO_printf(bio_out, "  %s", EVP_RAND_get0_name(m));
         BIO_printf(bio_out, " @ %s\n",
@@ -463,7 +463,7 @@ static void display_random(const char *name, EVP_RAND_CTX *drbg)
         if (gettables != NULL)
             for (; gettables->key != NULL; gettables++) {
                 /* State has been dealt with already, so ignore */
-                if (strcasecmp(gettables->key, OSSL_RAND_PARAM_STATE) == 0)
+                if (OPENSSL_strcasecmp(gettables->key, OSSL_RAND_PARAM_STATE) == 0)
                     continue;
                 /* Outside of verbose mode, we skip non-string values */
                 if (gettables->data_type != OSSL_PARAM_UTF8_STRING
@@ -1209,9 +1209,11 @@ static int provider_cmp(const OSSL_PROVIDER * const *a,
 static int collect_providers(OSSL_PROVIDER *provider, void *stack)
 {
     STACK_OF(OSSL_PROVIDER) *provider_stack = stack;
-
-    sk_OSSL_PROVIDER_push(provider_stack, provider);
-    return 1;
+    /*
+     * If OK - result is the index of inserted data
+     * Error - result is -1 or 0
+     */
+    return sk_OSSL_PROVIDER_push(provider_stack, provider) > 0 ? 1 : 0;
 }
 
 static void list_provider_info(void)
@@ -1226,11 +1228,20 @@ static void list_provider_info(void)
         BIO_printf(bio_err, "ERROR: Memory allocation\n");
         return;
     }
+
+    if (OSSL_PROVIDER_do_all(NULL, &collect_providers, providers) != 1) {
+        sk_OSSL_PROVIDER_free(providers);
+        BIO_printf(bio_err, "ERROR: Memory allocation\n");
+        return;
+    }
+
     BIO_printf(bio_out, "Providers:\n");
-    OSSL_PROVIDER_do_all(NULL, &collect_providers, providers);
     sk_OSSL_PROVIDER_sort(providers);
     for (i = 0; i < sk_OSSL_PROVIDER_num(providers); i++) {
         const OSSL_PROVIDER *prov = sk_OSSL_PROVIDER_value(providers, i);
+        const char *provname = OSSL_PROVIDER_get0_name(prov);
+
+        BIO_printf(bio_out, "  %s\n", provname);
 
         /* Query the "known" information parameters, the order matches below */
         params[0] = OSSL_PARAM_construct_utf8_ptr(OSSL_PROV_PARAM_NAME,
@@ -1243,23 +1254,23 @@ static void list_provider_info(void)
         params[4] = OSSL_PARAM_construct_end();
         OSSL_PARAM_set_all_unmodified(params);
         if (!OSSL_PROVIDER_get_params(prov, params)) {
-            BIO_printf(bio_err, "ERROR: Unable to query provider parameters\n");
-            return;
-        }
-
-        /* Print out the provider information, the params order matches above */
-        BIO_printf(bio_out, "  %s\n", OSSL_PROVIDER_get0_name(prov));
-        if (OSSL_PARAM_modified(params))
-            BIO_printf(bio_out, "    name: %s\n", name);
-        if (OSSL_PARAM_modified(params + 1))
-            BIO_printf(bio_out, "    version: %s\n", version);
-        if (OSSL_PARAM_modified(params + 2))
-            BIO_printf(bio_out, "    status: %sactive\n", status ? "" : "in");
-        if (verbose) {
-            if (OSSL_PARAM_modified(params + 3))
-                BIO_printf(bio_out, "    build info: %s\n", buildinfo);
-            print_param_types("gettable provider parameters",
-                              OSSL_PROVIDER_gettable_params(prov), 4);
+            BIO_printf(bio_err,
+                       "WARNING: Unable to query provider parameters for %s\n",
+                       provname);
+        } else {
+            /* Print out the provider information, the params order matches above */
+            if (OSSL_PARAM_modified(params))
+                BIO_printf(bio_out, "    name: %s\n", name);
+            if (OSSL_PARAM_modified(params + 1))
+                BIO_printf(bio_out, "    version: %s\n", version);
+            if (OSSL_PARAM_modified(params + 2))
+                BIO_printf(bio_out, "    status: %sactive\n", status ? "" : "in");
+            if (verbose) {
+                if (OSSL_PARAM_modified(params + 3))
+                    BIO_printf(bio_out, "    build info: %s\n", buildinfo);
+                print_param_types("gettable provider parameters",
+                                  OSSL_PROVIDER_gettable_params(prov), 4);
+            }
         }
     }
     sk_OSSL_PROVIDER_free(providers);
@@ -1474,7 +1485,7 @@ const OPTIONS list_options[] = {
     "List of cipher commands (deprecated)"},
 #endif
     {"cipher-algorithms", OPT_CIPHER_ALGORITHMS, '-',
-     "List of cipher algorithms"},
+     "List of symmetric cipher algorithms"},
     {"encoders", OPT_ENCODERS, '-', "List of encoding methods" },
     {"decoders", OPT_DECODERS, '-', "List of decoding methods" },
     {"key-managers", OPT_KEYMANAGERS, '-', "List of key managers" },

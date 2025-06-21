@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const os = require('os');
+const { isIP } = require('net');
 
 const types = {
   A: 1,
@@ -13,11 +14,11 @@ const types = {
   MX: 15,
   TXT: 16,
   ANY: 255,
-  CAA: 257
+  CAA: 257,
 };
 
 const classes = {
-  IN: 1
+  IN: 1,
 };
 
 // Naïve DNS parser/serializer.
@@ -34,16 +35,16 @@ function readDomainFromPacket(buffer, offset) {
     const { nread, domain } = readDomainFromPacket(buffer, offset + length);
     return {
       nread: 1 + length + nread,
-      domain: domain ? `${chunk}.${domain}` : chunk
+      domain: domain ? `${chunk}.${domain}` : chunk,
     };
   }
   // Pointer to another part of the packet.
   assert.strictEqual(length & 0xC0, 0xC0);
-  // eslint-disable-next-line space-infix-ops, space-unary-ops
+  // eslint-disable-next-line @stylistic/js/space-infix-ops, @stylistic/js/space-unary-ops
   const pointeeOffset = buffer.readUInt16BE(offset) &~ 0xC000;
   return {
     nread: 2,
-    domain: readDomainFromPacket(buffer, pointeeOffset)
+    domain: readDomainFromPacket(buffer, pointeeOffset),
   };
 }
 
@@ -195,11 +196,11 @@ function writeDNSPacket(parsed) {
 
   buffers.push(new Uint16Array([
     parsed.id,
-    parsed.flags === undefined ? kStandardResponseFlags : parsed.flags,
-    parsed.questions && parsed.questions.length,
-    parsed.answers && parsed.answers.length,
-    parsed.authorityAnswers && parsed.authorityAnswers.length,
-    parsed.additionalRecords && parsed.additionalRecords.length,
+    parsed.flags ?? kStandardResponseFlags,
+    parsed.questions?.length,
+    parsed.answers?.length,
+    parsed.authorityAnswers?.length,
+    parsed.additionalRecords?.length,
   ]));
 
   for (const q of parsed.questions) {
@@ -309,6 +310,25 @@ function errorLookupMock(code = mockedErrorCode, syscall = mockedSysCall) {
   };
 }
 
+function createMockedLookup(...addresses) {
+  addresses = addresses.map((address) => ({ address: address, family: isIP(address) }));
+
+  // Create a DNS server which replies with a AAAA and a A record for the same host
+  return function lookup(hostname, options, cb) {
+    if (options.all === true) {
+      process.nextTick(() => {
+        cb(null, addresses);
+      });
+
+      return;
+    }
+
+    process.nextTick(() => {
+      cb(null, addresses[0].address, addresses[0].family);
+    });
+  };
+}
+
 module.exports = {
   types,
   classes,
@@ -316,5 +336,6 @@ module.exports = {
   parseDNSPacket,
   errorLookupMock,
   mockedErrorCode,
-  mockedSysCall
+  mockedSysCall,
+  createMockedLookup,
 };

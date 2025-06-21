@@ -125,7 +125,7 @@
   my @lib_cflags_no_inst = ( $target{no_inst_lib_cflags} // @lib_cflags );
   my @lib_cflags_cont = ( $target{shared_cflag} || (),
                           @{$config{lib_cflags}}, @{$config{shared_cflag}},
-                          $cnf_cflags, '$(CFLAGS)');
+                          @cnf_cflags, '$(CFLAGS)');
   our $lib_cflags = join('', @lib_cflags, @lib_cflags_cont );
   our $lib_cflags_no_inst = join('', @lib_cflags_no_inst, @lib_cflags_cont );
   our $lib_ldflags =
@@ -161,7 +161,7 @@
   my @dso_cflags_no_inst = ( $target{no_inst_dso_cflags} // @dso_cflags );
   my @dso_cflags_cont = ( $target{module_cflag} || (),
                           @{$config{dso_cflags}}, @{$config{module_cflag}},
-                          $cnf_cflags, '$(CFLAGS)');
+                          @cnf_cflags, '$(CFLAGS)');
   our $dso_cflags = join('', @dso_cflags, @dso_cflags_cont );
   our $dso_cflags_no_inst = join('', @dso_cflags_no_inst, @dso_cflags_cont );
   our $dso_ldflags =
@@ -196,13 +196,9 @@
   my @bin_cflags = ( $target{bin_cflags} // () );
   my @bin_cflags_no_inst = ( $target{no_inst_bin_cflags} // @bin_cflags );
   my @bin_cflags_cont = ( @{$config{bin_cflags}},
-                          $cnf_cflags, '$(CFLAGS)');
+                          @cnf_cflags, '$(CFLAGS)');
   our $bin_cflags = join('', @bin_cflags, @bin_cflags_cont );
   our $bin_cflags_no_inst = join('', @bin_cflags_no_inst, @bin_cflags_cont );
-  our $bin_cflags =
-      join('', $target{bin_cflags} || (),
-               @{$config{bin_cflags}},
-               @cnf_cflags, '$(CFLAGS)');
   our $bin_ldflags =
       join('', $target{bin_lflags} || (),
                @{$config{bin_lflags}},
@@ -482,7 +478,8 @@ build_all_generated : $(GENERATED_MANDATORY) $(GENERATED) build_docs
 all : build_sw build_docs
 
 test : tests
-{- dependmagic('tests'); -} : build_programs_nodep, build_modules_nodep run_tests
+{- dependmagic('tests'); -} : build_programs_nodep, build_modules_nodep
+	$(MMS) $(MMSQUALIFIERS) run_tests
 run_tests :
         @ ! {- output_off() if $disabled{tests}; "" -}
         DEFINE SRCTOP "$(SRCDIR)"
@@ -549,11 +546,11 @@ clean : libclean
         - DELETE []vmsconfig.pm;*
 
 distclean : clean
+        - DELETE [.include.openssl]configuration.h;*
         - DELETE configdata.pm;*
         - DELETE descrip.mms;*
 
 depend : descrip.mms
-descrip.mms : FORCE
 	@ ! {- output_off() if $disabled{makedepend}; "" -}
 	@ $(PERL) {- sourcefile("util", "add-depends.pl") -} "{- $config{makedep_scheme} -}"
 	@ ! {- output_on() if $disabled{makedepend}; "" -}
@@ -714,13 +711,15 @@ vmsconfig.pm : configdata.pm
         WRITE CONFIG "  shlib_version => '","{- $config{shlib_version} -}","',"
         WRITE CONFIG "  shlib_major => '","{- $config{shlib_major} -}","',"
         WRITE CONFIG "  shlib_minor => '","{- $config{shlib_minor} -}","',"
-        WRITE CONFIG "  no_shared => '","{- $disabled{shared} -}","',"
         WRITE CONFIG "  INSTALLTOP => '$(INSTALLTOP)',"
         WRITE CONFIG "  OPENSSLDIR => '$(OPENSSLDIR)',"
+        WRITE CONFIG ");"
+        WRITE CONFIG "our %target = ("
         WRITE CONFIG "  pointer_size => '","{- $target{pointer_size} -}","',"
         WRITE CONFIG ");"
-        WRITE CONFIG "our %target = ();"
-        WRITE CONFIG "our %disabled = ();"
+        WRITE CONFIG "our %disabled = ("
+        WRITE CONFIG "  shared => '","{- $disabled{shared} -}","',"
+        WRITE CONFIG ");"
         WRITE CONFIG "our %withargs = ();"
         WRITE CONFIG "our %unified_info = ();"
         WRITE CONFIG "1;"
@@ -755,7 +754,16 @@ debug_logicals :
 
 # Building targets ###################################################
 
-configdata.pm : $(SRCDIR)Configure $(SRCDIR)config.com {- join(" ", @{$config{build_file_templates}}, @{$config{build_infos}}, @{$config{conf_files}}) -}
+descrip.mms : configdata.pm {- join(" ", @{$config{build_file_templates}}) -}
+	perl configdata.pm
+        @ WRITE SYS$OUTPUT "*************************************************"
+        @ WRITE SYS$OUTPUT "***                                           ***"
+        @ WRITE SYS$OUTPUT "***   Please run the same mms command again   ***"
+        @ WRITE SYS$OUTPUT "***                                           ***"
+        @ WRITE SYS$OUTPUT "*************************************************"
+        @ PIPE ( EXIT %X10000000 )
+
+configdata.pm : $(SRCDIR)Configure $(SRCDIR)config.com {- join(" ", @{$config{build_infos}}, @{$config{conf_files}}) -}
         perl configdata.pm -r
         @ WRITE SYS$OUTPUT "*************************************************"
         @ WRITE SYS$OUTPUT "***                                           ***"
@@ -871,6 +879,59 @@ EOF
       return ($filename, $scripture);
   }
 
+  # On VMS, (some) header file directories include the files
+  # __DECC_INCLUDE_EPILOGUE.H and __DECC_INCLUDE_PROLOGUE.H.
+  # When header files are generated, and the build directory
+  # isn't the same as the source directory, these files must
+  # be copied alongside the generated header file, or their
+  # effect will be lost.
+  # We use the same include file cache as make_includefile
+  # to check if the scripture to copy these files has already
+  # been generated.
+  sub make_decc_include_files {
+      my $outd = shift;
+      my $ind = shift;
+
+      # If the build directory and the source directory are the
+      # same, there's no need to copy the prologue and epilogue
+      # files.
+      return ('') if $outd eq $ind;
+
+      my $outprologue = catfile($outd, '__DECC_INCLUDE_PROLOGUE.H');
+      my $outepilogue = catfile($outd, '__DECC_INCLUDE_EPILOGUE.H');
+      my $inprologue = catfile($ind, '__DECC_INCLUDE_PROLOGUE.H');
+      my $inepilogue = catfile($ind, '__DECC_INCLUDE_EPILOGUE.H');
+      my @filenames = ();
+      my $scripture = '';
+
+      if ($includefile_cache{$outprologue}) {
+          push @filenames, $outprologue;
+      } elsif (-f $inprologue) {
+          my $local_scripture .= <<"EOF";
+$outprologue : $inprologue
+	COPY $inprologue $outprologue
+EOF
+          $includefile_cache{$outprologue} = $local_scripture;
+
+          push @filenames, $outprologue;
+          $scripture .= $local_scripture;
+      }
+      if ($includefile_cache{$outepilogue}) {
+          push @filenames, $outepilogue;
+      } elsif (-f $inepilogue) {
+          my $local_scripture .= <<"EOF";
+$outepilogue : $inepilogue
+	COPY $inepilogue $outepilogue
+EOF
+          $includefile_cache{$outepilogue} = $local_scripture;
+
+          push @filenames, $outepilogue;
+          $scripture .= $local_scripture;
+      }
+
+      return (@filenames, $scripture);
+  }
+
   sub generatetarget {
       my %args = @_;
       my $deps = join(" ", compute_platform_depends(@{$args{deps}}));
@@ -920,9 +981,10 @@ EOF
               ? '' : ' --case-insensitive';
           return <<"EOF";
 $target : $gen0 $deps $mkdef
-	\$(PERL) $mkdef$ord_ver --ordinals $gen0 --name $ord_name "--OS" "VMS"$case_insensitive > $target
+	\$(PERL) $mkdef$ord_ver --type $args{intent} --ordinals $gen0 --name $ord_name "--OS" "VMS"$case_insensitive > $target
 EOF
-      } elsif (platform->isasm($args{src})) {
+      } elsif (platform->isasm($args{src})
+               || platform->iscppasm($args{src})) {
           #
           # Assembler generator
           #
@@ -932,7 +994,9 @@ EOF
                 dso => "$dso_cflags $dso_cppflags",
                 bin => "$bin_cflags $bin_cppflags" } -> {$args{intent}};
           my $defs = join("", map { ",".$_ } @{$args{defs}});
-          my $target = platform->asm($args{src});
+          my $target = platform->isasm($args{src})
+                       ? platform->asm($args{src})
+                       : $args{src};
 
           my $generator;
           if ($gen0 =~ /\.pl$/) {
@@ -945,21 +1009,6 @@ EOF
           }
 
           if (defined($generator)) {
-              # If the target is named foo.S in build.info, we want to
-              # end up generating foo.s in two steps.
-              if ($args{src} =~ /\.S$/) {
-                   return <<"EOF";
-$target : $gen0 $deps
-	$generator \$\@-S
-        \@ extradefines = "$defs"
-	PIPE \$(CPP) $cppflags \$\@-S | -
-             \$(PERL) -ne "/^#(\\s*line)?\\s*[0-9]+\\s+""/ or print" > \$\@-i
-        \@ DELETE/SYMBOL/LOCAL extradefines
-        RENAME \$\@-i \$\@
-        DELETE \$\@-S;
-EOF
-              }
-              # Otherwise....
               return <<"EOF";
 $target : $gen0 $deps
         \@ extradefines = "$defs"
@@ -984,12 +1033,18 @@ EOF
           my @perlmodules = ( 'configdata.pm',
                               grep { $_ =~ m|\.pm$| } @{$args{deps}} );
           my %perlmoduleincs = map { '"-I'.dirname($_).'"' => 1 } @perlmodules;
-          $deps = join(' ', $deps, compute_platform_depends(@perlmodules));
+          my @decc_include_data
+              = make_decc_include_files(dirname($args{src}), dirname($gen0));
+          my $decc_include_scripture = pop @decc_include_data;
+          $deps = join(' ', $deps, @decc_include_data,
+                            compute_platform_depends(@perlmodules));
           @perlmodules = map { '"-M'.basename($_, '.pm').'"' } @perlmodules;
           my $perlmodules = join(' ', '', sort keys %perlmoduleincs, @perlmodules);
+
           return <<"EOF";
 $args{src} : $gen0 $deps
 	\$(PERL)$perlmodules $dofile "-o$target{build_file}" $gen0$gen_args > \$\@
+$decc_include_scripture
 EOF
       } elsif (grep { $_ eq $gen0 } @{$unified_info{programs}}) {
           #

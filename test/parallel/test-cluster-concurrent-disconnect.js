@@ -10,7 +10,7 @@ const os = require('os');
 
 if (cluster.isPrimary) {
   const workers = [];
-  const numCPUs = os.cpus().length;
+  const numCPUs = os.availableParallelism();
   let waitOnline = numCPUs;
   for (let i = 0; i < numCPUs; i++) {
     const worker = cluster.fork();
@@ -26,10 +26,10 @@ if (cluster.isPrimary) {
     // to send messages when the worker is disconnecting.
     worker.on('error', (err) => {
       assert.strictEqual(err.syscall, 'write');
-      if (common.isOSX) {
+      if (common.isMacOS) {
         assert(['EPIPE', 'ENOTCONN'].includes(err.code), err);
       } else {
-        assert.strictEqual(err.code, 'EPIPE');
+        assert(['EPIPE', 'ECONNRESET'].includes(err.code), err);
       }
     });
 

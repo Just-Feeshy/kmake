@@ -1,13 +1,12 @@
-const { resolve } = require('path')
+const { resolve } = require('node:path')
 const semver = require('semver')
 const libnpmdiff = require('libnpmdiff')
 const npa = require('npm-package-arg')
-const Arborist = require('@npmcli/arborist')
 const pacote = require('pacote')
 const pickManifest = require('npm-pick-manifest')
-const log = require('../utils/log-shim')
-const readPackageName = require('../utils/read-package-name.js')
-const BaseCommand = require('../base-command.js')
+const { log, output } = require('proc-log')
+const pkgJson = require('@npmcli/package-json')
+const BaseCommand = require('../base-cmd.js')
 
 class Diff extends BaseCommand {
   static description = 'The registry diff command'
@@ -32,6 +31,9 @@ class Diff extends BaseCommand {
     'include-workspace-root',
   ]
 
+  static workspaces = true
+  static ignoreImplicitWorkspace = false
+
   async exec (args) {
     const specs = this.npm.config.get('diff').filter(d => d)
     if (specs.length > 2) {
@@ -48,7 +50,7 @@ class Diff extends BaseCommand {
     // node_modules is sometimes under ./lib, and in global mode we're only ever
     // walking through node_modules (because we will have been given a package
     // name already)
-    if (this.npm.config.get('global')) {
+    if (this.npm.global) {
       this.top = resolve(this.npm.globalDir, '..')
     } else {
       this.top = this.prefix
@@ -61,13 +63,12 @@ class Diff extends BaseCommand {
       ...this.npm.flatOptions,
       diffFiles: args,
       where: this.top,
-      log,
     })
-    return this.npm.output(res)
+    return output.standard(res)
   }
 
-  async execWorkspaces (args, filters) {
-    await this.setWorkspaces(filters)
+  async execWorkspaces (args) {
+    await this.setWorkspaces()
     for (const workspacePath of this.workspacePaths) {
       this.top = workspacePath
       this.prefix = workspacePath
@@ -77,11 +78,12 @@ class Diff extends BaseCommand {
 
   // get the package name from the packument at `path`
   // throws if no packument is present OR if it does not have `name` attribute
-  async packageName (path) {
+  async packageName () {
     let name
     try {
-      name = await readPackageName(this.prefix)
-    } catch (e) {
+      const { content: pkg } = await pkgJson.normalize(this.prefix)
+      name = pkg.name
+    } catch {
       log.verbose('diff', 'could not read project dir package.json')
     }
 
@@ -101,7 +103,7 @@ class Diff extends BaseCommand {
     // no arguments, defaults to comparing cwd
     // to its latest published registry version
     if (!a) {
-      const pkgName = await this.packageName(this.prefix)
+      const pkgName = await this.packageName()
       return [
         `${pkgName}@${this.npm.config.get('tag')}`,
         `file:${this.prefix}`,
@@ -113,8 +115,9 @@ class Diff extends BaseCommand {
     let noPackageJson
     let pkgName
     try {
-      pkgName = await readPackageName(this.prefix)
-    } catch (e) {
+      const { content: pkg } = await pkgJson.normalize(this.prefix)
+      pkgName = pkg.name
+    } catch {
       log.verbose('diff', 'could not read project dir package.json')
       noPackageJson = true
     }
@@ -142,6 +145,7 @@ class Diff extends BaseCommand {
     if (spec.registry) {
       let actualTree
       let node
+      const Arborist = require('@npmcli/arborist')
       try {
         const opts = {
           ...this.npm.flatOptions,
@@ -152,7 +156,7 @@ class Diff extends BaseCommand {
         node = actualTree &&
           actualTree.inventory.query('name', spec.name)
             .values().next().value
-      } catch (e) {
+      } catch {
         log.verbose('diff', 'failed to load actual install tree')
       }
 
@@ -182,7 +186,7 @@ class Diff extends BaseCommand {
       // work from the top of the arborist tree to find the original semver
       // range declared in the package that depends on the package.
       let bSpec
-      if (spec.rawSpec) {
+      if (spec.rawSpec !== '*') {
         bSpec = spec.rawSpec
       } else {
         const bTargetVersion =
@@ -194,7 +198,6 @@ class Diff extends BaseCommand {
         const packument = await pacote.packument(spec, {
           ...this.npm.flatOptions,
           preferOnline: true,
-          log,
         })
         bSpec = pickManifest(
           packument,
@@ -225,8 +228,9 @@ class Diff extends BaseCommand {
     if (semverA && semverB) {
       let pkgName
       try {
-        pkgName = await readPackageName(this.prefix)
-      } catch (e) {
+        const { content: pkg } = await pkgJson.normalize(this.prefix)
+        pkgName = pkg.name
+      } catch {
         log.verbose('diff', 'could not read project dir package.json')
       }
 
@@ -253,6 +257,7 @@ class Diff extends BaseCommand {
 
   async findVersionsByPackageName (specs) {
     let actualTree
+    const Arborist = require('@npmcli/arborist')
     try {
       const opts = {
         ...this.npm.flatOptions,
@@ -260,13 +265,13 @@ class Diff extends BaseCommand {
       }
       const arb = new Arborist(opts)
       actualTree = await arb.loadActual(opts)
-    } catch (e) {
+    } catch {
       log.verbose('diff', 'failed to load actual install tree')
     }
 
     return specs.map(i => {
       const spec = npa(i)
-      if (spec.rawSpec) {
+      if (spec.rawSpec !== '*') {
         return i
       }
 

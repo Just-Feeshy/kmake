@@ -1,12 +1,17 @@
+"""
+Exposes the rule v8_binary_non_pointer_compression, which forces a label
+to be compiled without pointer compression.
+"""
+
 def _v8_disable_pointer_compression(settings, attr):
     return {
-        "//third_party/v8/HEAD:v8_enable_pointer_compression": "False",
+        "//:v8_enable_pointer_compression": "False",
     }
 
 v8_disable_pointer_compression = transition(
     implementation = _v8_disable_pointer_compression,
     inputs = [],
-    outputs = ["//third_party/v8/HEAD:v8_enable_pointer_compression"],
+    outputs = ["//:v8_enable_pointer_compression"],
 )
 
 # The implementation of transition_rule: all this does is copy the
@@ -42,17 +47,6 @@ v8_binary_non_pointer_compression = rule(
         # Note specificaly how it's configured with v8_target_cpu_transition, which
         # ensures that setting propagates down the graph.
         "binary": attr.label(cfg = v8_disable_pointer_compression),
-        # This is a stock Bazel requirement for any rule that uses Starlark
-        # transitions. It's okay to copy the below verbatim for all such rules.
-        #
-        # The purpose of this requirement is to give the ability to restrict
-        # which packages can invoke these rules, since Starlark transitions
-        # make much larger graphs possible that can have memory and performance
-        # consequences for your build. The whitelist defaults to "everything".
-        # But you can redefine it more strictly if you feel that's prudent.
-        "_allowlist_function_transition": attr.label(
-            default = "//tools/allowlists/function_transition_allowlist",
-        ),
     },
     # Making this executable means it works with "$ bazel run".
     executable = True,

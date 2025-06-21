@@ -24,14 +24,14 @@
  */
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <nghttp3/nghttp3.h>
 
 static nghttp3_info version = {NGHTTP3_VERSION_AGE, NGHTTP3_VERSION_NUM,
                                NGHTTP3_VERSION};
 
-nghttp3_info *nghttp3_version(int least_version) {
+const nghttp3_info *nghttp3_version(int least_version) {
   if (least_version > NGHTTP3_VERSION_NUM) {
     return NULL;
   }

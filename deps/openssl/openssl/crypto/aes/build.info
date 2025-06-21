@@ -2,9 +2,9 @@ LIBS=../../libcrypto
 
 $AESASM=aes_core.c aes_cbc.c
 IF[{- !$disabled{asm} -}]
-  $AESASM_x86=aes-586.s
+  $AESASM_x86=aes-586.S
   $AESDEF_x86=AES_ASM
-  $AESASM_x86_sse2=vpaes-x86.s aesni-x86.s
+  $AESASM_x86_sse2=vpaes-x86.S aesni-x86.S
   $AESDEF_x86_sse2=VPAES_ASM OPENSSL_IA32_SSE2
 
   $AESASM_x86_64=\
@@ -38,7 +38,11 @@ IF[{- !$disabled{asm} -}]
   $AESASM_parisc20_64=$AESASM_parisc11
   $AESDEF_parisc20_64=$AESDEF_parisc11
 
+  IF[{- $target{sys_id} ne "MACOSX" -}]
   $AESASM_ppc32=aes_core.c aes_cbc.c aes-ppc.s vpaes-ppc.s aesp8-ppc.s
+  ELSE
+    $AESASM_ppc32=aes_core.c aes_cbc.c aes-ppc.s vpaes-ppc.s
+  ENDIF
   $AESDEF_ppc32=AES_ASM VPAES_ASM
   $AESASM_ppc64=$AESASM_ppc32
   $AESDEF_ppc64=$AESDEF_ppc32
@@ -76,17 +80,17 @@ DEFINE[../../providers/libdefault.a]=$AESDEF
 # already gets everything that the static libcrypto.a has, and doesn't need it
 # added again.
 IF[{- !$disabled{module} && !$disabled{shared} -}]
-  DEFINE[../providers/liblegacy.a]=$AESDEF
+  DEFINE[../../providers/liblegacy.a]=$AESDEF
 ENDIF
 
 GENERATE[aes-ia64.s]=asm/aes-ia64.S
 
-GENERATE[aes-586.s]=asm/aes-586.pl
-DEPEND[aes-586.s]=../perlasm/x86asm.pl
-GENERATE[vpaes-x86.s]=asm/vpaes-x86.pl
-DEPEND[vpaes-586.s]=../perlasm/x86asm.pl
-GENERATE[aesni-x86.s]=asm/aesni-x86.pl
-DEPEND[aesni-586.s]=../perlasm/x86asm.pl
+GENERATE[aes-586.S]=asm/aes-586.pl
+DEPEND[aes-586.S]=../perlasm/x86asm.pl
+GENERATE[vpaes-x86.S]=asm/vpaes-x86.pl
+DEPEND[vpaes-586.S]=../perlasm/x86asm.pl
+GENERATE[aesni-x86.S]=asm/aesni-x86.pl
+DEPEND[aesni-586.S]=../perlasm/x86asm.pl
 
 GENERATE[aes-x86_64.s]=asm/aes-x86_64.pl
 GENERATE[vpaes-x86_64.s]=asm/vpaes-x86_64.pl

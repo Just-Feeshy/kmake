@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2014-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2014-2023 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -1797,6 +1797,21 @@ $code.=<<___;
 #ifndef __ARMEB__
 	rev		$ctr, $ctr
 #endif
+___
+$code.=<<___	if ($flavour =~ /64/);
+	vorr		$dat1,$dat0,$dat0
+	add		$tctr1, $ctr, #1
+	vorr		$dat2,$dat0,$dat0
+	add		$ctr, $ctr, #2
+	vorr		$ivec,$dat0,$dat0
+	rev		$tctr1, $tctr1
+	vmov.32		${dat1}[3],$tctr1
+	b.ls		.Lctr32_tail
+	rev		$tctr2, $ctr
+	sub		$len,$len,#3		// bias
+	vmov.32		${dat2}[3],$tctr2
+___
+$code.=<<___	if ($flavour !~ /64/);
 	add		$tctr1, $ctr, #1
 	vorr		$ivec,$dat0,$dat0
 	rev		$tctr1, $tctr1
@@ -1810,7 +1825,7 @@ $code.=<<___;
 	vorr		$dat2,$ivec,$ivec
 ___
 $code.=<<___	if ($flavour =~ /64/);
-	cmp		$len,#2
+	cmp		$len,#32
 	b.lo		.Loop3x_ctr32
 
 	add		w13,$ctr,#1
@@ -2003,11 +2018,25 @@ $code.=<<___;
 	aese		$dat1,q8
 	aesmc		$tmp1,$dat1
 	 vld1.8		{$in0},[$inp],#16
+___
+$code.=<<___	if ($flavour =~ /64/);
+	 vorr		$dat0,$ivec,$ivec
+___
+$code.=<<___	if ($flavour !~ /64/);
 	 add		$tctr0,$ctr,#1
+___
+$code.=<<___;
 	aese		$dat2,q8
 	aesmc		$dat2,$dat2
 	 vld1.8		{$in1},[$inp],#16
+___
+$code.=<<___	if ($flavour =~ /64/);
+	 vorr		$dat1,$ivec,$ivec
+___
+$code.=<<___	if ($flavour !~ /64/);
 	 rev		$tctr0,$tctr0
+___
+$code.=<<___;
 	aese		$tmp0,q9
 	aesmc		$tmp0,$tmp0
 	aese		$tmp1,q9
@@ -2016,6 +2045,12 @@ $code.=<<___;
 	 mov		$key_,$key
 	aese		$dat2,q9
 	aesmc		$tmp2,$dat2
+___
+$code.=<<___	if ($flavour =~ /64/);
+	 vorr		$dat2,$ivec,$ivec
+	 add		$tctr0,$ctr,#1
+___
+$code.=<<___;
 	aese		$tmp0,q12
 	aesmc		$tmp0,$tmp0
 	aese		$tmp1,q12
@@ -2031,22 +2066,47 @@ $code.=<<___;
 	aese		$tmp1,q13
 	aesmc		$tmp1,$tmp1
 	 veor		$in2,$in2,$rndlast
+___
+$code.=<<___	if ($flavour =~ /64/);
+	 rev		$tctr0,$tctr0
+	aese		$tmp2,q13
+	aesmc		$tmp2,$tmp2
+	 vmov.32	${dat0}[3], $tctr0
+___
+$code.=<<___	if ($flavour !~ /64/);
 	 vmov.32	${ivec}[3], $tctr0
 	aese		$tmp2,q13
 	aesmc		$tmp2,$tmp2
 	 vorr		$dat0,$ivec,$ivec
+___
+$code.=<<___;
 	 rev		$tctr1,$tctr1
 	aese		$tmp0,q14
 	aesmc		$tmp0,$tmp0
+___
+$code.=<<___	if ($flavour !~ /64/);
 	 vmov.32	${ivec}[3], $tctr1
 	 rev		$tctr2,$ctr
+___
+$code.=<<___;
 	aese		$tmp1,q14
 	aesmc		$tmp1,$tmp1
+___
+$code.=<<___	if ($flavour =~ /64/);
+	 vmov.32	${dat1}[3], $tctr1
+	 rev		$tctr2,$ctr
+	aese		$tmp2,q14
+	aesmc		$tmp2,$tmp2
+	 vmov.32	${dat2}[3], $tctr2
+___
+$code.=<<___	if ($flavour !~ /64/);
 	 vorr		$dat1,$ivec,$ivec
 	 vmov.32	${ivec}[3], $tctr2
 	aese		$tmp2,q14
 	aesmc		$tmp2,$tmp2
 	 vorr		$dat2,$ivec,$ivec
+___
+$code.=<<___;
 	 subs		$len,$len,#3
 	aese		$tmp0,q15
 	aese		$tmp1,q15
@@ -2201,10 +2261,10 @@ $code.=<<___	if ($flavour =~ /64/);
 	b.ne	.Lxts_enc_big_size
 	// Encrypt the iv with key2, as the first XEX iv.
 	ldr	$rounds,[$key2,#240]
-	vld1.8	{$dat},[$key2],#16
+	vld1.32	{$dat},[$key2],#16
 	vld1.8	{$iv0},[$ivp]
 	sub	$rounds,$rounds,#2
-	vld1.8	{$dat1},[$key2],#16
+	vld1.32	{$dat1},[$key2],#16
 
 .Loop_enc_iv_enc:
 	aese	$iv0,$dat
@@ -2806,9 +2866,9 @@ $code.=<<___	if ($flavour =~ /64/);
 
 	// Encrypt the composite block to get the last second encrypted text block
 	ldr	$rounds,[$key1,#240]		// load key schedule...
-	vld1.8	{$dat},[$key1],#16
+	vld1.32	{$dat},[$key1],#16
 	sub	$rounds,$rounds,#2
-	vld1.8	{$dat1},[$key1],#16		// load key schedule...
+	vld1.32	{$dat1},[$key1],#16		// load key schedule...
 .Loop_final_enc:
 	aese	$tmpin,$dat0
 	aesmc	$tmpin,$tmpin
@@ -2877,10 +2937,10 @@ $code.=<<___	if ($flavour =~ /64/);
 	b.ne	.Lxts_dec_big_size
 	// Encrypt the iv with key2, as the first XEX iv.
 	ldr	$rounds,[$key2,#240]
-	vld1.8	{$dat},[$key2],#16
+	vld1.32	{$dat},[$key2],#16
 	vld1.8	{$iv0},[$ivp]
 	sub	$rounds,$rounds,#2
-	vld1.8	{$dat1},[$key2],#16
+	vld1.32	{$dat1},[$key2],#16
 
 .Loop_dec_small_iv_enc:
 	aese	$iv0,$dat
@@ -2960,10 +3020,10 @@ $code.=<<___	if ($flavour =~ /64/);
 
 	// Encrypt the iv with key2, as the first XEX iv
 	ldr	$rounds,[$key2,#240]
-	vld1.8	{$dat},[$key2],#16
+	vld1.32	{$dat},[$key2],#16
 	vld1.8	{$iv0},[$ivp]
 	sub	$rounds,$rounds,#2
-	vld1.8	{$dat1},[$key2],#16
+	vld1.32	{$dat1},[$key2],#16
 
 .Loop_dec_iv_enc:
 	aese	$iv0,$dat
@@ -3293,7 +3353,7 @@ $code.=<<___	if ($flavour =~ /64/);
 .align	4
 .Lxts_dec_tail4x:
 	add	$inp,$inp,#16
-	vld1.32	{$dat0},[$inp],#16
+	tst	$tailcnt,#0xf
 	veor	$tmp1,$dat1,$tmp0
 	vst1.8	{$tmp1},[$out],#16
 	veor	$tmp2,$dat2,$tmp2
@@ -3302,6 +3362,8 @@ $code.=<<___	if ($flavour =~ /64/);
 	veor	$tmp4,$dat4,$tmp4
 	vst1.8	{$tmp3-$tmp4},[$out],#32
 
+	b.eq	.Lxts_dec_abort
+	vld1.8	{$dat0},[$inp],#16
 	b	.Lxts_done
 .align	4
 .Lxts_outer_dec_tail:
@@ -3479,7 +3541,7 @@ $code.=<<___	if ($flavour =~ /64/);
 	// Processing the last two blocks with cipher stealing.
 	mov	x7,x3
 	cbnz	x2,.Lxts_dec_1st_done
-	vld1.32	{$dat0},[$inp],#16
+	vld1.8	{$dat0},[$inp],#16
 
 	// Decrypt the last secod block to get the last plain text block
 .Lxts_dec_1st_done:
@@ -3524,9 +3586,9 @@ $code.=<<___	if ($flavour =~ /64/);
 
 	// Decrypt the composite block to get the last second plain text block
 	ldr	$rounds,[$key_,#240]
-	vld1.8	{$dat},[$key_],#16
+	vld1.32	{$dat},[$key_],#16
 	sub	$rounds,$rounds,#2
-	vld1.8	{$dat1},[$key_],#16
+	vld1.32	{$dat1},[$key_],#16
 .Loop_final_dec:
 	aesd	$tmpin,$dat0
 	aesimc	$tmpin,$tmpin
@@ -3598,6 +3660,9 @@ if ($flavour =~ /64/) {			######## 64-bit code
 	s/\.[ui]?32//o and s/\.16b/\.4s/go;
 	s/\.[ui]?64//o and s/\.16b/\.2d/go;
 	s/\.[42]([sd])\[([0-3])\]/\.$1\[$2\]/o;
+
+	# Switch preprocessor checks to aarch64 versions.
+	s/__ARME([BL])__/__AARCH64E$1__/go;
 
 	print $_,"\n";
     }

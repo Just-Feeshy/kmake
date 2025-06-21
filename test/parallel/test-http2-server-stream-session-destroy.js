@@ -6,6 +6,11 @@ if (!common.hasCrypto)
 const assert = require('assert');
 const h2 = require('http2');
 
+common.expectWarning(
+  'DeprecationWarning',
+  'http2Stream.priority is longer supported after priority signalling was deprecated in RFC 1993',
+  'DEP0194');
+
 const server = h2.createServer();
 
 server.on('stream', common.mustCall((stream) => {
@@ -34,7 +39,7 @@ server.on('stream', common.mustCall((stream) => {
       name: 'Error'
     }
   );
-  // When session is detroyed all streams are destroyed and no further
+  // When session is destroyed all streams are destroyed and no further
   // error should be emitted.
   stream.on('error', common.mustNotCall());
   assert.strictEqual(stream.write('data', common.expectsError({

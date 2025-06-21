@@ -24,30 +24,21 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "nghttp3_gaptr.h"
-#include "nghttp3_range.h"
 
 #include <string.h>
 #include <assert.h>
 
-int nghttp3_gaptr_init(nghttp3_gaptr *gaptr, const nghttp3_mem *mem) {
-  int rv;
-  nghttp3_range range = {0, UINT64_MAX};
-
-  rv = nghttp3_ksl_init(&gaptr->gap, nghttp3_ksl_range_compar,
-                        sizeof(nghttp3_range), mem);
-  if (rv != 0) {
-    return rv;
-  }
-
-  rv = nghttp3_ksl_insert(&gaptr->gap, NULL, &range, NULL);
-  if (rv != 0) {
-    nghttp3_ksl_free(&gaptr->gap);
-    return rv;
-  }
+void nghttp3_gaptr_init(nghttp3_gaptr *gaptr, const nghttp3_mem *mem) {
+  nghttp3_ksl_init(&gaptr->gap, nghttp3_ksl_range_compar, sizeof(nghttp3_range),
+                   mem);
 
   gaptr->mem = mem;
+}
 
-  return 0;
+static int gaptr_gap_init(nghttp3_gaptr *gaptr) {
+  nghttp3_range range = {0, UINT64_MAX};
+
+  return nghttp3_ksl_insert(&gaptr->gap, NULL, &range, NULL);
 }
 
 void nghttp3_gaptr_free(nghttp3_gaptr *gaptr) {
@@ -58,10 +49,18 @@ void nghttp3_gaptr_free(nghttp3_gaptr *gaptr) {
   nghttp3_ksl_free(&gaptr->gap);
 }
 
-int nghttp3_gaptr_push(nghttp3_gaptr *gaptr, uint64_t offset, size_t datalen) {
+int nghttp3_gaptr_push(nghttp3_gaptr *gaptr, uint64_t offset,
+                       uint64_t datalen) {
   int rv;
   nghttp3_range k, m, l, r, q = {offset, offset + datalen};
   nghttp3_ksl_it it;
+
+  if (nghttp3_ksl_len(&gaptr->gap) == 0) {
+    rv = gaptr_gap_init(gaptr);
+    if (rv != 0) {
+      return rv;
+    }
+  }
 
   it = nghttp3_ksl_lower_bound_compar(&gaptr->gap, &q,
                                       nghttp3_ksl_range_exclusive_compar);
@@ -74,10 +73,12 @@ int nghttp3_gaptr_push(nghttp3_gaptr *gaptr, uint64_t offset, size_t datalen) {
     }
 
     if (nghttp3_range_eq(&k, &m)) {
-      nghttp3_ksl_remove(&gaptr->gap, &it, &k);
+      nghttp3_ksl_remove_hint(&gaptr->gap, &it, &it, &k);
       continue;
     }
+
     nghttp3_range_cut(&l, &r, &k, &m);
+
     if (nghttp3_range_len(&l)) {
       nghttp3_ksl_update_key(&gaptr->gap, &k, &l);
 
@@ -90,41 +91,73 @@ int nghttp3_gaptr_push(nghttp3_gaptr *gaptr, uint64_t offset, size_t datalen) {
     } else if (nghttp3_range_len(&r)) {
       nghttp3_ksl_update_key(&gaptr->gap, &k, &r);
     }
+
     nghttp3_ksl_it_next(&it);
   }
+
   return 0;
 }
 
 uint64_t nghttp3_gaptr_first_gap_offset(nghttp3_gaptr *gaptr) {
-  nghttp3_ksl_it it = nghttp3_ksl_begin(&gaptr->gap);
-  nghttp3_range r = *(nghttp3_range *)nghttp3_ksl_it_key(&it);
-  return r.begin;
+  nghttp3_ksl_it it;
+
+  if (nghttp3_ksl_len(&gaptr->gap) == 0) {
+    return 0;
+  }
+
+  it = nghttp3_ksl_begin(&gaptr->gap);
+
+  return ((nghttp3_range *)nghttp3_ksl_it_key(&it))->begin;
 }
 
-nghttp3_ksl_it nghttp3_gaptr_get_first_gap_after(nghttp3_gaptr *gaptr,
-                                                 uint64_t offset) {
+nghttp3_range nghttp3_gaptr_get_first_gap_after(nghttp3_gaptr *gaptr,
+                                                uint64_t offset) {
   nghttp3_range q = {offset, offset + 1};
-  return nghttp3_ksl_lower_bound_compar(&gaptr->gap, &q,
-                                        nghttp3_ksl_range_exclusive_compar);
+  nghttp3_ksl_it it;
+
+  if (nghttp3_ksl_len(&gaptr->gap) == 0) {
+    nghttp3_range r = {0, UINT64_MAX};
+    return r;
+  }
+
+  it = nghttp3_ksl_lower_bound_compar(&gaptr->gap, &q,
+                                      nghttp3_ksl_range_exclusive_compar);
+
+  assert(!nghttp3_ksl_it_end(&it));
+
+  return *(nghttp3_range *)nghttp3_ksl_it_key(&it);
 }
 
 int nghttp3_gaptr_is_pushed(nghttp3_gaptr *gaptr, uint64_t offset,
-                            size_t datalen) {
+                            uint64_t datalen) {
   nghttp3_range q = {offset, offset + datalen};
-  nghttp3_ksl_it it = nghttp3_ksl_lower_bound_compar(
-      &gaptr->gap, &q, nghttp3_ksl_range_exclusive_compar);
-  nghttp3_range k = *(nghttp3_range *)nghttp3_ksl_it_key(&it);
-  nghttp3_range m = nghttp3_range_intersect(&q, &k);
+  nghttp3_ksl_it it;
+  nghttp3_range m;
+
+  if (nghttp3_ksl_len(&gaptr->gap) == 0) {
+    return 0;
+  }
+
+  it = nghttp3_ksl_lower_bound_compar(&gaptr->gap, &q,
+                                      nghttp3_ksl_range_exclusive_compar);
+  m = nghttp3_range_intersect(&q, (nghttp3_range *)nghttp3_ksl_it_key(&it));
+
   return nghttp3_range_len(&m) == 0;
 }
 
 void nghttp3_gaptr_drop_first_gap(nghttp3_gaptr *gaptr) {
-  nghttp3_ksl_it it = nghttp3_ksl_begin(&gaptr->gap);
+  nghttp3_ksl_it it;
   nghttp3_range r;
+
+  if (nghttp3_ksl_len(&gaptr->gap) == 0) {
+    return;
+  }
+
+  it = nghttp3_ksl_begin(&gaptr->gap);
 
   assert(!nghttp3_ksl_it_end(&it));
 
   r = *(nghttp3_range *)nghttp3_ksl_it_key(&it);
 
-  nghttp3_ksl_remove(&gaptr->gap, NULL, &r);
+  nghttp3_ksl_remove_hint(&gaptr->gap, NULL, &it, &r);
 }

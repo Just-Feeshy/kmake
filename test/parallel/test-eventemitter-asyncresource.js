@@ -10,6 +10,7 @@ const {
 const {
   deepStrictEqual,
   strictEqual,
+  throws,
 } = require('assert');
 
 const {
@@ -40,7 +41,7 @@ function makeHook(trackedTypes) {
 
     before(asyncId) { log(asyncId, 'before'); },
     after(asyncId) { log(asyncId, 'after'); },
-    destroy(asyncId) { log(asyncId, 'destroy'); }
+    destroy(asyncId) { log(asyncId, 'destroy'); },
   }).enable();
 
   return {
@@ -50,7 +51,7 @@ function makeHook(trackedTypes) {
     },
     ids() {
       return new Set(eventMap.keys());
-    }
+    },
   };
 }
 
@@ -130,3 +131,24 @@ function makeHook(trackedTypes) {
     ],
   ]));
 })().then(common.mustCall());
+
+throws(
+  () => EventEmitterAsyncResource.prototype.emit(),
+  { name: 'TypeError', message: /Cannot read private member/ }
+);
+
+throws(
+  () => EventEmitterAsyncResource.prototype.emitDestroy(),
+  { name: 'TypeError', message: /Cannot read private member/ }
+);
+
+['asyncId', 'triggerAsyncId', 'asyncResource'].forEach((getter) => {
+  throws(
+    () => Reflect.get(EventEmitterAsyncResource.prototype, getter, {}),
+    {
+      name: 'TypeError',
+      message: /Cannot read private member/,
+      stack: new RegExp(`at get ${getter}`),
+    }
+  );
+});

@@ -1,8 +1,10 @@
+// Flags: --expose-internals
 'use strict';
 const common = require('../common');
 
 const net = require('net');
-const { HTTPParser } = process.binding('http_parser');
+const { internalBinding } = require('internal/test/binding');
+const { HTTPParser } = internalBinding('http_parser');
 
 const server = net.createServer((socket) => {
   socket.write('HTTP/1.1 200 OK\r\n');
@@ -27,7 +29,6 @@ const server = net.createServer((socket) => {
     {},
     0,
     0,
-    1e3
   );
 
   parser[HTTPParser.kOnTimeout] = common.mustNotCall();

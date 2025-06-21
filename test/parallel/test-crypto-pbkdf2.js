@@ -5,6 +5,7 @@ if (!common.hasCrypto)
 
 const assert = require('assert');
 const crypto = require('crypto');
+const { hasOpenSSL3 } = require('../common/crypto');
 
 function runPBKDF2(password, salt, iterations, keylen, hash) {
   const syncResult =
@@ -63,14 +64,12 @@ assert.throws(
   }
 );
 
-for (const iterations of [-1, 0]) {
+for (const iterations of [-1, 0, 2147483648]) {
   assert.throws(
     () => crypto.pbkdf2Sync('password', 'salt', iterations, 20, 'sha1'),
     {
       code: 'ERR_OUT_OF_RANGE',
       name: 'RangeError',
-      message: 'The value of "iterations" is out of range. ' +
-               `It must be >= 1 && < 4294967296. Received ${iterations}`
     }
   );
 }
@@ -100,7 +99,7 @@ for (const iterations of [-1, 0]) {
     });
 });
 
-[-1, 4294967297].forEach((input) => {
+[-1, 2147483648, 4294967296].forEach((input) => {
   assert.throws(
     () => {
       crypto.pbkdf2('password', 'salt', 1, input, 'sha256',
@@ -108,8 +107,6 @@ for (const iterations of [-1, 0]) {
     }, {
       code: 'ERR_OUT_OF_RANGE',
       name: 'RangeError',
-      message: 'The value of "keylen" is out of range. It must be >= 0 && < ' +
-               `4294967296. Received ${input === -1 ? '-1' : '4_294_967_297'}`
     });
 });
 
@@ -223,7 +220,7 @@ assert.throws(
   }
 );
 
-if (!common.hasOpenSSL3) {
+if (!hasOpenSSL3) {
   const kNotPBKDF2Supported = ['shake128', 'shake256'];
   crypto.getHashes()
     .filter((hash) => !kNotPBKDF2Supported.includes(hash))

@@ -5,10 +5,13 @@
 
 #include <optional>
 #include <unordered_map>
+#include "node_exit_code.h"
 #include "node_messaging.h"
 #include "uv.h"
 
 namespace node {
+
+struct SnapshotData;
 namespace worker {
 
 class WorkerThreadData;
@@ -27,9 +30,12 @@ class Worker : public AsyncWrap {
   Worker(Environment* env,
          v8::Local<v8::Object> wrap,
          const std::string& url,
+         const std::string& name,
          std::shared_ptr<PerIsolateOptions> per_isolate_opts,
          std::vector<std::string>&& exec_argv,
-         std::shared_ptr<KVStore> env_vars);
+         std::shared_ptr<KVStore> env_vars,
+         const SnapshotData* snapshot_data,
+         const bool is_internal);
   ~Worker() override;
 
   // Run the worker. This is only called from the worker thread.
@@ -38,7 +44,7 @@ class Worker : public AsyncWrap {
   // Forcibly exit the thread with a specified exit code. This may be called
   // from any thread. `error_code` and `error_message` can be used to create
   // a custom `'error'` event before emitting `'exit'`.
-  void Exit(int code,
+  void Exit(ExitCode code,
             const char* error_code = nullptr,
             const char* error_message = nullptr);
 
@@ -48,12 +54,14 @@ class Worker : public AsyncWrap {
   template <typename Fn>
   inline bool RequestInterrupt(Fn&& cb);
 
-  void MemoryInfo(MemoryTracker* tracker) const override;
+  SET_NO_MEMORY_INFO()
   SET_MEMORY_INFO_NAME(Worker)
   SET_SELF_SIZE(Worker)
   bool IsNotIndicativeOfMemoryLeakAtExit() const override;
 
   bool is_stopped() const;
+  const SnapshotData* snapshot_data() const { return snapshot_data_; }
+  bool is_internal() const { return is_internal_; }
 
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void CloneParentEnvVars(
@@ -61,6 +69,7 @@ class Worker : public AsyncWrap {
   static void SetEnvVars(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void StartThread(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void StopThread(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void HasRef(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Ref(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Unref(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetResourceLimits(
@@ -69,6 +78,8 @@ class Worker : public AsyncWrap {
   static void TakeHeapSnapshot(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void LoopIdleTime(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void LoopStartTime(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void GetHeapStatistics(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
   bool CreateEnvMessagePort(Environment* env);
@@ -90,9 +101,11 @@ class Worker : public AsyncWrap {
 
   const char* custom_error_ = nullptr;
   std::string custom_error_str_;
-  int exit_code_ = 0;
+  ExitCode exit_code_ = ExitCode::kNoFailure;
   ThreadId thread_id_;
   uintptr_t stack_base_ = 0;
+  // Optional name used for debugging in inspector and trace events.
+  std::string name_;
 
   // Custom resource constraints:
   double resource_limits_[kTotalResourceLimitCount];
@@ -105,10 +118,7 @@ class Worker : public AsyncWrap {
 
   std::unique_ptr<MessagePortData> child_port_data_;
   std::shared_ptr<KVStore> env_vars_;
-
-  // This is always kept alive because the JS object associated with the Worker
-  // instance refers to it via its [kPort] property.
-  MessagePort* parent_port_ = nullptr;
+  EmbedderPreloadCallback embedder_preload_;
 
   // A raw flag that is used by creator and worker threads to
   // sync up on pre-mature termination of worker  - while in the
@@ -125,6 +135,8 @@ class Worker : public AsyncWrap {
   // destroyed alongwith the worker thread.
   Environment* env_ = nullptr;
 
+  const SnapshotData* snapshot_data_ = nullptr;
+  const bool is_internal_;
   friend class WorkerThreadData;
 };
 

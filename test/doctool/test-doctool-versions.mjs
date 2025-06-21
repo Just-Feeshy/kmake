@@ -4,7 +4,6 @@ import tmpdir from '../common/tmpdir.js';
 import assert from 'assert';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
-import path from 'path';
 import { fileURLToPath } from 'url';
 import util from 'util';
 
@@ -29,7 +28,7 @@ const expected = [
 ];
 
 tmpdir.refresh();
-const versionsFile = path.join(tmpdir.path, 'versions.json');
+const versionsFile = tmpdir.resolve('versions.json');
 debuglog(`${process.execPath} ${versionsTool} ${versionsFile}`);
 const opts = { cwd: tmpdir.path, encoding: 'utf8' };
 const cp = spawnSync(process.execPath, [ versionsTool, versionsFile ], opts);
@@ -62,8 +61,8 @@ for (const version of versions) {
 // Check that the minimum number of versions were returned.
 // Later versions are allowed, but not checked for here (they were checked
 // above).
-// Also check for the previous semver major -- From master this will be the
-// most recent major release.
+// Also check for the previous semver major -- From the main branch this will be
+// the most recent major release.
 const thisMajor = Number.parseInt(process.versions.node.split('.')[0]);
 const prevMajorString = `${thisMajor - 1}.x`;
 if (!expected.includes(prevMajorString)) {

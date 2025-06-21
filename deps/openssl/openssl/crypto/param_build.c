@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2023 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2019, Oracle and/or its affiliates.  All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -221,6 +221,10 @@ int OSSL_PARAM_BLD_push_BN_pad(OSSL_PARAM_BLD *bld, const char *key,
         }
         if (BN_get_flags(bn, BN_FLG_SECURE) == BN_FLG_SECURE)
             secure = 1;
+
+        /* The BIGNUM is zero, we must transfer at least one byte */
+        if (sz == 0)
+            sz++;
     }
     pd = param_push(bld, key, sz, sz, OSSL_PARAM_UNSIGNED_INTEGER, secure);
     if (pd == NULL)
@@ -235,9 +239,9 @@ int OSSL_PARAM_BLD_push_utf8_string(OSSL_PARAM_BLD *bld, const char *key,
     OSSL_PARAM_BLD_DEF *pd;
     int secure;
 
-    if (bsize == 0) {
+    if (bsize == 0)
         bsize = strlen(buf);
-    } else if (bsize > INT_MAX) {
+    if (bsize > INT_MAX) {
         ERR_raise(ERR_LIB_CRYPTO, CRYPTO_R_STRING_TOO_LONG);
         return 0;
     }
@@ -254,9 +258,9 @@ int OSSL_PARAM_BLD_push_utf8_ptr(OSSL_PARAM_BLD *bld, const char *key,
 {
     OSSL_PARAM_BLD_DEF *pd;
 
-    if (bsize == 0) {
+    if (bsize == 0)
         bsize = strlen(buf);
-    } else if (bsize > INT_MAX) {
+    if (bsize > INT_MAX) {
         ERR_raise(ERR_LIB_CRYPTO, CRYPTO_R_STRING_TOO_LONG);
         return 0;
     }

@@ -1,14 +1,12 @@
 # Commit queue
 
-> Stability: 1 - Experimental
-
 _tl;dr: You can land pull requests by adding the `commit-queue` label to it._
 
-Commit Queue is an experimental feature for the project which simplifies the
+Commit Queue is a feature for the project which simplifies the
 landing process by automating it via GitHub Actions. With it, collaborators can
 land pull requests by adding the `commit-queue` label to a PR. All
-checks will run via node-core-utils, and if the pull request is ready to land,
-the Action will rebase it and push to master.
+checks will run via `@node-core/utils`, and if the pull request is ready to
+land, the Action will rebase it and push to `main`.
 
 This document gives an overview of how the Commit Queue works, as well as
 implementation details, reasoning for design choices, and current limitations.
@@ -18,7 +16,7 @@ implementation details, reasoning for design choices, and current limitations.
 From a high-level, the Commit Queue works as follow:
 
 1. Collaborators will add `commit-queue` label to pull requests ready to land
-2. Every five minutes the queue will do the following for each pull request
+2. Every five minutes the queue will do the following for each mergeable pull request
    with the label:
    1. Check if the PR also has a `request-ci` label (if it has, skip this PR
       since it's pending a CI run)
@@ -50,7 +48,7 @@ work for more complex pull requests. These are the currently known limitations
 of the commit queue:
 
 1. All commits in a pull request must either be following commit message
-   guidelines or be a valid [`fixup!`](https://git-scm.com/docs/git-commit#Documentation/git-commit.txt---fixupltcommitgt)
+   guidelines or be a valid [`fixup!`](https://git-scm.com/docs/git-commit#Documentation/git-commit.txt---fixupamendrewordltcommitgt)
    commit that will be correctly handled by the [`--autosquash`](https://git-scm.com/docs/git-rebase#Documentation/git-rebase.txt---autosquash)
    option
 2. A CI must've ran and succeeded since the last change on the PR
@@ -76,7 +74,7 @@ reasons:
    commit, meaning we wouldn't be able to use it for already opened PRs
    without rebasing them first.
 
-`node-core-utils` is configured with a personal token and
+`@node-core/utils` is configured with a personal token and
 a Jenkins token from
 [@nodejs-github-bot](https://github.com/nodejs/github-bot).
 `octokit/graphql-action` is used to fetch all pull requests with the
@@ -108,7 +106,7 @@ forwarding stdout and stderr to a file. If any errors happen,
 to the PR, as well as a comment with the output of `git node land`.
 
 If no errors happen during `git node land`, the script will use the
-`GITHUB_TOKEN` to push the changes to `master`, and then will leave a
+`GITHUB_TOKEN` to push the changes to `main`, and then will leave a
 `Landed in ...` comment in the PR, and then will close it. Iteration continues
 until all PRs have done the steps above.
 

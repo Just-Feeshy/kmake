@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -26,7 +26,6 @@
 #include "prov/providercommon.h"
 #include "prov/provider_ctx.h"
 #include "prov/macsignature.h"
-#include "e_os.h" /* strcasecmp */
 
 static OSSL_FUNC_keymgmt_new_fn mac_new;
 static OSSL_FUNC_keymgmt_free_fn mac_free;
@@ -282,6 +281,9 @@ static int mac_export(void *keydata, int selection, OSSL_CALLBACK *param_cb,
     if (!ossl_prov_is_running() || key == NULL)
         return 0;
 
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) == 0)
+        return 0;
+
     tmpl = OSSL_PARAM_BLD_new();
     if (tmpl == NULL)
         return 0;
@@ -397,7 +399,7 @@ static void *mac_gen_init(void *provctx, int selection,
     struct mac_gen_ctx *gctx = mac_gen_init_common(provctx, selection);
 
     if (gctx != NULL && !mac_gen_set_params(gctx, params)) {
-        OPENSSL_free(gctx);
+        mac_gen_cleanup(gctx);
         gctx = NULL;
     }
     return gctx;
@@ -409,7 +411,7 @@ static void *cmac_gen_init(void *provctx, int selection,
     struct mac_gen_ctx *gctx = mac_gen_init_common(provctx, selection);
 
     if (gctx != NULL && !cmac_gen_set_params(gctx, params)) {
-        OPENSSL_free(gctx);
+        mac_gen_cleanup(gctx);
         gctx = NULL;
     }
     return gctx;

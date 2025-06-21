@@ -89,7 +89,23 @@ const { inspect } = require('util');
     strictEqual(data.enable, undefined);
     mc.port1.close();
   });
-  setTimeout(() => mc.port2.postMessage(e), 100);
+  const interval = setInterval(() => {
+    if (e.count > 0) {
+      clearInterval(interval);
+      mc.port2.postMessage(e);
+    }
+  }, 50);
+}
+
+{
+  // Tests that the ELD histogram is disposable
+  let histogram;
+  {
+    using hi = monitorEventLoopDelay();
+    histogram = hi;
+  }
+  // The histogram should already be disabled.
+  strictEqual(histogram.disable(), false);
 }
 
 {
@@ -129,6 +145,13 @@ const { inspect } = require('util');
       code: 'ERR_INVALID_ARG_TYPE',
     });
   });
+
+  // Number greater than 5 is not allowed
+  for (const i of [6, 10]) {
+    throws(() => createHistogram({ figures: i }), {
+      code: 'ERR_OUT_OF_RANGE',
+    });
+  }
 
   createHistogram({ lowest: 1, highest: 11, figures: 1 });
 }

@@ -38,6 +38,11 @@ uint8_t *ngtcp2_setmem(uint8_t *dest, uint8_t b, size_t n) {
   return dest + n;
 }
 
+const void *ngtcp2_get_bytes(void *dest, const void *src, size_t n) {
+  memcpy(dest, src, n);
+  return (uint8_t *)src + n;
+}
+
 #define LOWER_XDIGITS "0123456789abcdef"
 
 uint8_t *ngtcp2_encode_hex(uint8_t *dest, const uint8_t *data, size_t len) {
@@ -214,20 +219,6 @@ uint8_t *ngtcp2_encode_ipv6(uint8_t *dest, const uint8_t *addr) {
   *p = '\0';
 
   return dest;
-}
-
-int ngtcp2_verify_stateless_reset_token(const uint8_t *want,
-                                        const uint8_t *got) {
-  return !ngtcp2_check_invalid_stateless_reset_token(got) &&
-                 ngtcp2_cmemeq(want, got, NGTCP2_STATELESS_RESET_TOKENLEN)
-             ? 0
-             : NGTCP2_ERR_INVALID_ARGUMENT;
-}
-
-int ngtcp2_check_invalid_stateless_reset_token(const uint8_t *token) {
-  static uint8_t invalid_token[NGTCP2_STATELESS_RESET_TOKENLEN] = {0};
-
-  return 0 == memcmp(invalid_token, token, NGTCP2_STATELESS_RESET_TOKENLEN);
 }
 
 int ngtcp2_cmemeq(const uint8_t *a, const uint8_t *b, size_t n) {

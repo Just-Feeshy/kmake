@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,6 +8,7 @@
  */
 
 #include <assert.h>
+#include <limits.h>
 #include <openssl/cms.h>
 #include <openssl/err.h>
 #include <openssl/decoder.h>
@@ -48,7 +49,7 @@ static EVP_PKEY *pkey_type2param(int ptype, const void *pval,
         if (pctx == NULL || EVP_PKEY_paramgen_init(pctx) <= 0)
             goto err;
         if (OBJ_obj2txt(groupname, sizeof(groupname), poid, 0) <= 0
-                || !EVP_PKEY_CTX_set_group_name(pctx, groupname)) {
+                || EVP_PKEY_CTX_set_group_name(pctx, groupname) <= 0) {
             ERR_raise(ERR_LIB_CMS, CMS_R_DECODE_ERROR);
             goto err;
         }
@@ -257,7 +258,7 @@ static int ecdh_cms_encrypt(CMS_RecipientInfo *ri)
     ASN1_STRING *wrap_str;
     ASN1_OCTET_STRING *ukm;
     unsigned char *penc = NULL;
-    size_t penclen;
+    int penclen;
     int rv = 0;
     int ecdh_nid, kdf_type, kdf_nid, wrap_nid;
     const EVP_MD *kdf_md;
@@ -274,22 +275,25 @@ static int ecdh_cms_encrypt(CMS_RecipientInfo *ri)
     /* Is everything uninitialised? */
     if (aoid == OBJ_nid2obj(NID_undef)) {
         /* Set the key */
+        size_t enckeylen;
 
-        penclen = EVP_PKEY_get1_encoded_public_key(pkey, &penc);
-        ASN1_STRING_set0(pubkey, penc, penclen);
+        enckeylen = EVP_PKEY_get1_encoded_public_key(pkey, &penc);
+        if (enckeylen > INT_MAX || enckeylen == 0)
+            goto err;
+        ASN1_STRING_set0(pubkey, penc, (int)enckeylen);
         pubkey->flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07);
         pubkey->flags |= ASN1_STRING_FLAG_BITS_LEFT;
 
         penc = NULL;
-        X509_ALGOR_set0(talg, OBJ_nid2obj(NID_X9_62_id_ecPublicKey),
-                        V_ASN1_UNDEF, NULL);
+        (void)X509_ALGOR_set0(talg, OBJ_nid2obj(NID_X9_62_id_ecPublicKey),
+                              V_ASN1_UNDEF, NULL); /* cannot fail */
     }
 
     /* See if custom parameters set */
     kdf_type = EVP_PKEY_CTX_get_ecdh_kdf_type(pctx);
     if (kdf_type <= 0)
         goto err;
-    if (!EVP_PKEY_CTX_get_ecdh_kdf_md(pctx, &kdf_md))
+    if (EVP_PKEY_CTX_get_ecdh_kdf_md(pctx, &kdf_md) <= 0)
         goto err;
     ecdh_nid = EVP_PKEY_CTX_get_ecdh_cofactor_mode(pctx);
     if (ecdh_nid < 0)
@@ -346,7 +350,7 @@ static int ecdh_cms_encrypt(CMS_RecipientInfo *ri)
 
     penclen = CMS_SharedInfo_encode(&penc, wrap_alg, ukm, keylen);
 
-    if (penclen == 0)
+    if (penclen <= 0)
         goto err;
 
     if (EVP_PKEY_CTX_set0_ecdh_kdf_ukm(pctx, penc, penclen) <= 0)
@@ -358,7 +362,7 @@ static int ecdh_cms_encrypt(CMS_RecipientInfo *ri)
      * of another AlgorithmIdentifier.
      */
     penclen = i2d_X509_ALGOR(wrap_alg, &penc);
-    if (penc == NULL || penclen == 0)
+    if (penclen <= 0)
         goto err;
     wrap_str = ASN1_STRING_new();
     if (wrap_str == NULL)

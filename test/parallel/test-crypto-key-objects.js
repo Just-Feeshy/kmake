@@ -5,7 +5,6 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
-const { types: { isKeyObject } } = require('util');
 const {
   createCipheriv,
   createDecipheriv,
@@ -21,9 +20,11 @@ const {
   privateDecrypt,
   privateEncrypt,
   getCurves,
+  generateKeySync,
   generateKeyPairSync,
-  webcrypto,
 } = require('crypto');
+
+const { hasOpenSSL3 } = require('../common/crypto');
 
 const fixtures = require('../common/fixtures');
 
@@ -33,18 +34,6 @@ const privatePem = fixtures.readKey('rsa_private.pem', 'ascii');
 const publicDsa = fixtures.readKey('dsa_public_1025.pem', 'ascii');
 const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
                                     'ascii');
-
-{
-  // Attempting to create an empty key should throw.
-  assert.throws(() => {
-    createSecretKey(Buffer.alloc(0));
-  }, {
-    name: 'RangeError',
-    code: 'ERR_OUT_OF_RANGE',
-    message: 'The value of "key.byteLength" is out of range. ' +
-             'It must be > 0. Received 0'
-  });
-}
 
 {
   // Attempting to create a key of a wrong type should throw
@@ -82,6 +71,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
   const keybuf = randomBytes(32);
   const key = createSecretKey(keybuf);
   assert.strictEqual(key.type, 'secret');
+  assert.strictEqual(key.toString(), '[object KeyObject]');
   assert.strictEqual(key.symmetricKeySize, 32);
   assert.strictEqual(key.asymmetricKeyType, undefined);
   assert.strictEqual(key.asymmetricKeyDetails, undefined);
@@ -163,29 +153,34 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
 
   const publicKey = createPublicKey(publicPem);
   assert.strictEqual(publicKey.type, 'public');
+  assert.strictEqual(publicKey.toString(), '[object KeyObject]');
   assert.strictEqual(publicKey.asymmetricKeyType, 'rsa');
   assert.strictEqual(publicKey.symmetricKeySize, undefined);
 
   const privateKey = createPrivateKey(privatePem);
   assert.strictEqual(privateKey.type, 'private');
+  assert.strictEqual(privateKey.toString(), '[object KeyObject]');
   assert.strictEqual(privateKey.asymmetricKeyType, 'rsa');
   assert.strictEqual(privateKey.symmetricKeySize, undefined);
 
   // It should be possible to derive a public key from a private key.
   const derivedPublicKey = createPublicKey(privateKey);
   assert.strictEqual(derivedPublicKey.type, 'public');
+  assert.strictEqual(derivedPublicKey.toString(), '[object KeyObject]');
   assert.strictEqual(derivedPublicKey.asymmetricKeyType, 'rsa');
   assert.strictEqual(derivedPublicKey.symmetricKeySize, undefined);
 
   const publicKeyFromJwk = createPublicKey({ key: publicJwk, format: 'jwk' });
-  assert.strictEqual(publicKey.type, 'public');
-  assert.strictEqual(publicKey.asymmetricKeyType, 'rsa');
-  assert.strictEqual(publicKey.symmetricKeySize, undefined);
+  assert.strictEqual(publicKeyFromJwk.type, 'public');
+  assert.strictEqual(publicKeyFromJwk.toString(), '[object KeyObject]');
+  assert.strictEqual(publicKeyFromJwk.asymmetricKeyType, 'rsa');
+  assert.strictEqual(publicKeyFromJwk.symmetricKeySize, undefined);
 
   const privateKeyFromJwk = createPrivateKey({ key: jwk, format: 'jwk' });
-  assert.strictEqual(privateKey.type, 'private');
-  assert.strictEqual(privateKey.asymmetricKeyType, 'rsa');
-  assert.strictEqual(privateKey.symmetricKeySize, undefined);
+  assert.strictEqual(privateKeyFromJwk.type, 'private');
+  assert.strictEqual(privateKeyFromJwk.toString(), '[object KeyObject]');
+  assert.strictEqual(privateKeyFromJwk.asymmetricKeyType, 'rsa');
+  assert.strictEqual(privateKeyFromJwk.symmetricKeySize, undefined);
 
   // It should also be possible to import an encrypted private key as a public
   // key.
@@ -304,7 +299,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
   // This should not cause a crash: https://github.com/nodejs/node/issues/25247
   assert.throws(() => {
     createPrivateKey({ key: '' });
-  }, common.hasOpenSSL3 ? {
+  }, hasOpenSSL3 ? {
     message: 'error:1E08010C:DECODER routines::unsupported',
   } : {
     message: 'error:0909006C:PEM routines:get_name:no start line',
@@ -330,7 +325,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
       type: 'pkcs1'
     });
     createPrivateKey({ key, format: 'der', type: 'pkcs1' });
-  }, common.hasOpenSSL3 ? {
+  }, hasOpenSSL3 ? {
     message: /error:1E08010C:DECODER routines::unsupported/,
     library: 'DECODER routines'
   } : {
@@ -517,7 +512,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
 
 {
   // Reading an encrypted key without a passphrase should fail.
-  assert.throws(() => createPrivateKey(privateDsa), common.hasOpenSSL3 ? {
+  assert.throws(() => createPrivateKey(privateDsa), hasOpenSSL3 ? {
     name: 'Error',
     message: 'error:07880109:common libcrypto routines::interrupted or ' +
              'cancelled',
@@ -533,7 +528,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
     key: privateDsa,
     format: 'pem',
     passphrase: Buffer.alloc(1025, 'a')
-  }), common.hasOpenSSL3 ? { name: 'Error' } : {
+  }), hasOpenSSL3 ? { name: 'Error' } : {
     code: 'ERR_OSSL_PEM_BAD_PASSWORD_READ',
     name: 'Error'
   });
@@ -545,9 +540,7 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
     format: 'pem',
     passphrase: Buffer.alloc(1024, 'a')
   }), {
-    message: common.hasOpenSSL3 ?
-      'error:07880109:common libcrypto routines::interrupted or cancelled' :
-      /bad decrypt/
+    message: /bad decrypt/
   });
 
   const publicKey = createPublicKey(publicDsa);
@@ -827,22 +820,71 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
 }
 
 {
-  const buffer = Buffer.from('Hello World');
-  const keyObject = createSecretKey(buffer);
-  const keyPair = generateKeyPairSync('ec', { namedCurve: 'P-256' });
-  assert(isKeyObject(keyPair.publicKey));
-  assert(isKeyObject(keyPair.privateKey));
-  assert(isKeyObject(keyObject));
+  const first = Buffer.from('Hello');
+  const second = Buffer.from('World');
+  const keyObject = createSecretKey(first);
+  assert(createSecretKey(first).equals(createSecretKey(first)));
+  assert(!createSecretKey(first).equals(createSecretKey(second)));
 
-  assert(!isKeyObject(buffer));
-
-  webcrypto.subtle.importKey(
-    'node.keyObject',
-    keyPair.publicKey,
-    { name: 'ECDH', namedCurve: 'P-256' },
-    false,
-    [],
-  ).then((cryptoKey) => {
-    assert(!isKeyObject(cryptoKey));
+  assert.throws(() => keyObject.equals(0), {
+    name: 'TypeError',
+    code: 'ERR_INVALID_ARG_TYPE',
+    message: 'The "otherKeyObject" argument must be an instance of KeyObject. Received type number (0)'
   });
+
+  assert(keyObject.equals(keyObject));
+  assert(!keyObject.equals(createPublicKey(publicPem)));
+  assert(!keyObject.equals(createPrivateKey(privatePem)));
+}
+
+{
+  const first = generateKeyPairSync('ed25519');
+  const second = generateKeyPairSync('ed25519');
+  const secret = generateKeySync('aes', { length: 128 });
+
+  assert(first.publicKey.equals(first.publicKey));
+  assert(first.publicKey.equals(createPublicKey(
+    first.publicKey.export({ format: 'pem', type: 'spki' }))));
+  assert(!first.publicKey.equals(second.publicKey));
+  assert(!first.publicKey.equals(second.privateKey));
+  assert(!first.publicKey.equals(secret));
+
+  assert(first.privateKey.equals(first.privateKey));
+  assert(first.privateKey.equals(createPrivateKey(
+    first.privateKey.export({ format: 'pem', type: 'pkcs8' }))));
+  assert(!first.privateKey.equals(second.privateKey));
+  assert(!first.privateKey.equals(second.publicKey));
+  assert(!first.privateKey.equals(secret));
+}
+
+{
+  const first = generateKeyPairSync('ed25519');
+  const second = generateKeyPairSync('ed448');
+
+  assert(!first.publicKey.equals(second.publicKey));
+  assert(!first.publicKey.equals(second.privateKey));
+  assert(!first.privateKey.equals(second.privateKey));
+  assert(!first.privateKey.equals(second.publicKey));
+}
+
+{
+  const first = createSecretKey(Buffer.alloc(0));
+  const second = createSecretKey(new ArrayBuffer(0));
+  const third = createSecretKey(Buffer.alloc(1));
+  assert(first.equals(first));
+  assert(first.equals(second));
+  assert(!first.equals(third));
+  assert(!third.equals(first));
+}
+
+{
+  // This should not cause a crash: https://github.com/nodejs/node/issues/44471
+  for (const key of ['', 'foo', null, undefined, true, Boolean]) {
+    assert.throws(() => {
+      createPublicKey({ key, format: 'jwk' });
+    }, { code: 'ERR_INVALID_ARG_TYPE', message: /The "key\.key" property must be of type object/ });
+    assert.throws(() => {
+      createPrivateKey({ key, format: 'jwk' });
+    }, { code: 'ERR_INVALID_ARG_TYPE', message: /The "key\.key" property must be of type object/ });
+  }
 }

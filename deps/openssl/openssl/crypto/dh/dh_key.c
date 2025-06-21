@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -46,6 +46,12 @@ int ossl_dh_compute_key(unsigned char *key, const BIGNUM *pub_key, DH *dh)
 
     if (BN_num_bits(dh->params.p) > OPENSSL_DH_MAX_MODULUS_BITS) {
         ERR_raise(ERR_LIB_DH, DH_R_MODULUS_TOO_LARGE);
+        goto err;
+    }
+
+    if (dh->params.q != NULL
+        && BN_num_bits(dh->params.q) > OPENSSL_DH_MAX_MODULUS_BITS) {
+        ERR_raise(ERR_LIB_DH, DH_R_Q_TOO_LARGE);
         goto err;
     }
 
@@ -190,7 +196,6 @@ static int dh_bn_mod_exp(const DH *dh, BIGNUM *r,
 static int dh_init(DH *dh)
 {
     dh->flags |= DH_FLAG_CACHE_MONT_P;
-    ossl_ffc_params_init(&dh->params);
     dh->dirty_cnt++;
     return 1;
 }
@@ -265,6 +270,12 @@ static int generate_key(DH *dh)
 
     if (BN_num_bits(dh->params.p) > OPENSSL_DH_MAX_MODULUS_BITS) {
         ERR_raise(ERR_LIB_DH, DH_R_MODULUS_TOO_LARGE);
+        return 0;
+    }
+
+    if (dh->params.q != NULL
+        && BN_num_bits(dh->params.q) > OPENSSL_DH_MAX_MODULUS_BITS) {
+        ERR_raise(ERR_LIB_DH, DH_R_Q_TOO_LARGE);
         return 0;
     }
 
@@ -375,20 +386,17 @@ int ossl_dh_buf2key(DH *dh, const unsigned char *buf, size_t len)
     int err_reason = DH_R_BN_ERROR;
     BIGNUM *pubkey = NULL;
     const BIGNUM *p;
-    size_t p_size;
+    int ret;
 
     if ((pubkey = BN_bin2bn(buf, len, NULL)) == NULL)
         goto err;
     DH_get0_pqg(dh, &p, NULL, NULL);
-    if (p == NULL || (p_size = BN_num_bytes(p)) == 0) {
+    if (p == NULL || BN_num_bytes(p) == 0) {
         err_reason = DH_R_NO_PARAMETERS_SET;
         goto err;
     }
-    /*
-     * As per Section 4.2.8.1 of RFC 8446 fail if DHE's
-     * public key is of size not equal to size of p
-     */
-    if (BN_is_zero(pubkey) || p_size != len) {
+    /* Prevent small subgroup attacks per RFC 8446 Section 4.2.8.1 */
+    if (!ossl_dh_check_pub_key_partial(dh, pubkey, &ret)) {
         err_reason = DH_R_INVALID_PUBKEY;
         goto err;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2003-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,9 +8,12 @@
  */
 
 #include "e_os.h"
+#include <string.h>
 #include <limits.h>
 #include <openssl/crypto.h>
+#include "crypto/ctype.h"
 #include "internal/cryptlib.h"
+#include "internal/thread_once.h"
 
 #define DEFAULT_SEPARATOR ':'
 #define CH_ZERO '\0'
@@ -215,7 +218,7 @@ unsigned char *OPENSSL_hexstr2buf(const char *str, long *buflen)
     return ossl_hexstr2buf_sep(str, buflen, DEFAULT_SEPARATOR);
 }
 
-static int buf2hexstr_sep(char *str, size_t str_n, size_t *strlen,
+static int buf2hexstr_sep(char *str, size_t str_n, size_t *strlength,
                           const unsigned char *buf, size_t buflen,
                           const char sep)
 {
@@ -226,12 +229,14 @@ static int buf2hexstr_sep(char *str, size_t str_n, size_t *strlen,
     int has_sep = (sep != CH_ZERO);
     size_t len = has_sep ? buflen * 3 : 1 + buflen * 2;
 
-    if (strlen != NULL)
-        *strlen = len;
+    if (len == 0)
+        ++len;
+    if (strlength != NULL)
+        *strlength = len;
     if (str == NULL)
         return 1;
 
-    if (str_n < (unsigned long)len) {
+    if (str_n < len) {
         ERR_raise(ERR_LIB_CRYPTO, CRYPTO_R_TOO_SMALL_BUFFER);
         return 0;
     }
@@ -243,21 +248,21 @@ static int buf2hexstr_sep(char *str, size_t str_n, size_t *strlen,
         if (has_sep)
             *q++ = sep;
     }
-    if (has_sep)
+    if (has_sep && buflen > 0)
         --q;
     *q = CH_ZERO;
 
 #ifdef CHARSET_EBCDIC
-    ebcdic2ascii(str, str, q - str - 1);
+    ebcdic2ascii(str, str, q - str);
 #endif
     return 1;
 }
 
-int OPENSSL_buf2hexstr_ex(char *str, size_t str_n, size_t *strlen,
+int OPENSSL_buf2hexstr_ex(char *str, size_t str_n, size_t *strlength,
                           const unsigned char *buf, size_t buflen,
                           const char sep)
 {
-    return buf2hexstr_sep(str, str_n, strlen, buf, buflen, sep);
+    return buf2hexstr_sep(str, str_n, strlength, buf, buflen, sep);
 }
 
 char *ossl_buf2hexstr_sep(const unsigned char *buf, long buflen, char sep)
@@ -337,4 +342,27 @@ int openssl_strerror_r(int errnum, char *buf, size_t buflen)
     OPENSSL_strlcpy(buf, err, buflen);
     return 1;
 #endif
+}
+
+int OPENSSL_strcasecmp(const char *s1, const char *s2)
+{
+    int t;
+
+    while ((t = ossl_tolower(*s1) - ossl_tolower(*s2++)) == 0)
+        if (*s1++ == '\0')
+            return 0;
+    return t;
+}
+
+int OPENSSL_strncasecmp(const char *s1, const char *s2, size_t n)
+{
+    int t;
+    size_t i;
+
+    for (i = 0; i < n; i++)
+        if ((t = ossl_tolower(*s1) - ossl_tolower(*s2++)) != 0)
+            return t;
+        else if (*s1++ == '\0')
+            return 0;
+    return 0;
 }

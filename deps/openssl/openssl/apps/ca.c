@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -628,6 +628,8 @@ end_of_options:
 
     f = NCONF_get_string(conf, section, ENV_NAMEOPT);
 
+    if (f == NULL)
+        ERR_clear_error();
     if (f != NULL) {
         if (!set_nameopt(f)) {
             BIO_printf(bio_err, "Invalid name options: \"%s\"\n", f);
@@ -785,8 +787,10 @@ end_of_options:
         /* We can have sections in the ext file */
         if (extensions == NULL) {
             extensions = NCONF_get_string(extfile_conf, "default", "extensions");
-            if (extensions == NULL)
+            if (extensions == NULL) {
+                ERR_clear_error();
                 extensions = "default";
+            }
         }
     }
 
@@ -802,15 +806,20 @@ end_of_options:
     /*
      * EVP_PKEY_get_default_digest_name() returns 2 if the digest is
      * mandatory for this algorithm.
+     *
+     * That call may give back the name "UNDEF", which has these meanings:
+     *
+     * when def_ret == 2: the user MUST leave the digest unspecified
+     * when def_ret == 1: the user MAY leave the digest unspecified
      */
     if (def_ret == 2 && strcmp(def_dgst, "UNDEF") == 0) {
-        /* The signing algorithm requires there to be no digest */
         dgst = NULL;
     } else if (dgst == NULL
-               && (dgst = lookup_conf(conf, section, ENV_DEFAULT_MD)) == NULL) {
+               && (dgst = lookup_conf(conf, section, ENV_DEFAULT_MD)) == NULL
+               && strcmp(def_dgst, "UNDEF") != 0) {
         goto end;
     } else {
-        if (strcmp(dgst, "default") == 0) {
+        if (strcmp(dgst, "default") == 0 || strcmp(def_dgst, "UNDEF") == 0) {
             if (def_ret <= 0) {
                 BIO_puts(bio_err, "no default digest\n");
                 goto end;
@@ -824,6 +833,8 @@ end_of_options:
             char *tmp_email_dn = NULL;
 
             tmp_email_dn = NCONF_get_string(conf, section, ENV_DEFAULT_EMAIL_DN);
+            if (tmp_email_dn == NULL)
+                ERR_clear_error();
             if (tmp_email_dn != NULL && strcmp(tmp_email_dn, "no") == 0)
                 email_dn = 0;
         }
@@ -839,6 +850,7 @@ end_of_options:
         if (NCONF_get_string(conf, section, ENV_RAND_SERIAL) != NULL) {
             rand_ser = 1;
         } else {
+            ERR_clear_error();
             serialfile = lookup_conf(conf, section, ENV_SERIAL);
             if (serialfile == NULL)
                 goto end;
@@ -908,8 +920,10 @@ end_of_options:
         }
 
         if (days == 0) {
-            if (!NCONF_get_number(conf, section, ENV_DEFAULT_DAYS, &days))
+            if (!NCONF_get_number(conf, section, ENV_DEFAULT_DAYS, &days)) {
+                ERR_clear_error();
                 days = 0;
+            }
         }
         if (enddate == NULL && days == 0) {
             BIO_printf(bio_err, "cannot lookup how many days to certify for\n");
@@ -922,7 +936,8 @@ end_of_options:
                 goto end;
             }
         } else {
-            if ((serial = load_serial(serialfile, create_ser, NULL)) == NULL) {
+            serial = load_serial(serialfile, NULL, create_ser, NULL);
+            if (serial == NULL) {
                 BIO_printf(bio_err, "error while loading serial number\n");
                 goto end;
             }
@@ -1033,7 +1048,7 @@ end_of_options:
             }
         }
         /*
-         * we have a stack of newly certified certificates and a data base
+         * we have a stack of newly certified certificates and a database
          * and serial number that need updating
          */
 
@@ -1134,7 +1149,7 @@ end_of_options:
             if (!rotate_index(dbfile, "new", "old"))
                 goto end;
 
-            BIO_printf(bio_err, "Data Base Updated\n");
+            BIO_printf(bio_err, "Database updated\n");
         }
     }
 
@@ -1160,21 +1175,28 @@ end_of_options:
             }
         }
 
-        if ((crlnumberfile = NCONF_get_string(conf, section, ENV_CRLNUMBER))
-            != NULL)
-            if ((crlnumber = load_serial(crlnumberfile, 0, NULL)) == NULL) {
+        crlnumberfile = NCONF_get_string(conf, section, ENV_CRLNUMBER);
+        if (crlnumberfile != NULL) {
+            if ((crlnumber = load_serial(crlnumberfile, NULL, 0, NULL))
+                == NULL) {
                 BIO_printf(bio_err, "error while loading CRL number\n");
                 goto end;
             }
+        } else {
+            ERR_clear_error();
+        }
 
         if (!crldays && !crlhours && !crlsec) {
             if (!NCONF_get_number(conf, section,
-                                  ENV_DEFAULT_CRL_DAYS, &crldays))
+                                  ENV_DEFAULT_CRL_DAYS, &crldays)) {
+                ERR_clear_error();
                 crldays = 0;
+            }
             if (!NCONF_get_number(conf, section,
-                                  ENV_DEFAULT_CRL_HOURS, &crlhours))
+                                  ENV_DEFAULT_CRL_HOURS, &crlhours)) {
+                ERR_clear_error();
                 crlhours = 0;
-            ERR_clear_error();
+            }
         }
         if ((crl_nextupdate == NULL) &&
                 (crldays == 0) && (crlhours == 0) && (crlsec == 0)) {
@@ -1314,7 +1336,7 @@ end_of_options:
             if (!rotate_index(dbfile, "new", "old"))
                 goto end;
 
-            BIO_printf(bio_err, "Data Base Updated\n");
+            BIO_printf(bio_err, "Database updated\n");
         }
     }
     ret = 0;
@@ -1756,7 +1778,7 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509,
 
     if (verbose)
         BIO_printf(bio_err,
-                   "The subject name appears to be ok, checking data base for clashes\n");
+                   "The subject name appears to be ok, checking database for clashes\n");
 
     /* Build the correct Subject if no e-mail is wanted in the subject. */
     if (!email_dn) {
@@ -1845,7 +1867,7 @@ static int do_body(X509 **xret, EVP_PKEY *pkey, X509 *x509,
         else if (rrow[DB_type][0] == DB_TYPE_VAL)
             p = "Valid";
         else
-            p = "\ninvalid type, Data base error\n";
+            p = "\ninvalid type, Database error\n";
         BIO_printf(bio_err, "Type          :%s\n", p);;
         if (rrow[DB_type][0] == DB_TYPE_REV) {
             p = rrow[DB_exp_date];
@@ -2367,7 +2389,7 @@ static char *make_revocation_str(REVINFO_TYPE rev_type, const char *rev_arg)
 
     case REV_CRL_REASON:
         for (i = 0; i < 8; i++) {
-            if (strcasecmp(rev_arg, crl_reasons[i]) == 0) {
+            if (OPENSSL_strcasecmp(rev_arg, crl_reasons[i]) == 0) {
                 reason = crl_reasons[i];
                 break;
             }
@@ -2467,18 +2489,18 @@ static int make_revoked(X509_REVOKED *rev, const char *str)
         rtmp = ASN1_ENUMERATED_new();
         if (rtmp == NULL || !ASN1_ENUMERATED_set(rtmp, reason_code))
             goto end;
-        if (!X509_REVOKED_add1_ext_i2d(rev, NID_crl_reason, rtmp, 0, 0))
+        if (X509_REVOKED_add1_ext_i2d(rev, NID_crl_reason, rtmp, 0, 0) <= 0)
             goto end;
     }
 
     if (rev && comp_time) {
-        if (!X509_REVOKED_add1_ext_i2d
-            (rev, NID_invalidity_date, comp_time, 0, 0))
+        if (X509_REVOKED_add1_ext_i2d
+            (rev, NID_invalidity_date, comp_time, 0, 0) <= 0)
             goto end;
     }
     if (rev && hold) {
-        if (!X509_REVOKED_add1_ext_i2d
-            (rev, NID_hold_instruction_code, hold, 0, 0))
+        if (X509_REVOKED_add1_ext_i2d
+            (rev, NID_hold_instruction_code, hold, 0, 0) <= 0)
             goto end;
     }
 
@@ -2584,7 +2606,7 @@ int unpack_revinfo(ASN1_TIME **prevtm, int *preason, ASN1_OBJECT **phold,
     }
     if (reason_str) {
         for (i = 0; i < NUM_REASONS; i++) {
-            if (strcasecmp(reason_str, crl_reasons[i]) == 0) {
+            if (OPENSSL_strcasecmp(reason_str, crl_reasons[i]) == 0) {
                 reason_code = i;
                 break;
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -132,7 +132,7 @@ const OPTIONS cms_options[] = {
     {"binary", OPT_BINARY, '-',
      "Treat input as binary: do not translate to canonical form"},
     {"crlfeol", OPT_CRLFEOL, '-',
-     "Use CRLF as EOL termination instead of CR only" },
+     "Use CRLF as EOL termination instead of LF only" },
     {"asciicrlf", OPT_ASCIICRLF, '-',
      "Perform CRLF canonicalisation when signing"},
 
@@ -494,13 +494,15 @@ int cms_main(int argc, char **argv)
             if (rr_from == NULL
                 && (rr_from = sk_OPENSSL_STRING_new_null()) == NULL)
                 goto end;
-            sk_OPENSSL_STRING_push(rr_from, opt_arg());
+            if (sk_OPENSSL_STRING_push(rr_from, opt_arg()) <= 0)
+                goto end;
             break;
         case OPT_RR_TO:
             if (rr_to == NULL
                 && (rr_to = sk_OPENSSL_STRING_new_null()) == NULL)
                 goto end;
-            sk_OPENSSL_STRING_push(rr_to, opt_arg());
+            if (sk_OPENSSL_STRING_push(rr_to, opt_arg()) <= 0)
+                goto end;
             break;
         case OPT_PRINT:
             noout = print = 1;
@@ -577,13 +579,15 @@ int cms_main(int argc, char **argv)
                 if (sksigners == NULL
                     && (sksigners = sk_OPENSSL_STRING_new_null()) == NULL)
                     goto end;
-                sk_OPENSSL_STRING_push(sksigners, signerfile);
+                if (sk_OPENSSL_STRING_push(sksigners, signerfile) <= 0)
+                    goto end;
                 if (keyfile == NULL)
                     keyfile = signerfile;
                 if (skkeys == NULL
                     && (skkeys = sk_OPENSSL_STRING_new_null()) == NULL)
                     goto end;
-                sk_OPENSSL_STRING_push(skkeys, keyfile);
+                if (sk_OPENSSL_STRING_push(skkeys, keyfile) <= 0)
+                    goto end;
                 keyfile = NULL;
             }
             signerfile = opt_arg();
@@ -601,12 +605,14 @@ int cms_main(int argc, char **argv)
                 if (sksigners == NULL
                     && (sksigners = sk_OPENSSL_STRING_new_null()) == NULL)
                     goto end;
-                sk_OPENSSL_STRING_push(sksigners, signerfile);
+                if (sk_OPENSSL_STRING_push(sksigners, signerfile) <= 0)
+                    goto end;
                 signerfile = NULL;
                 if (skkeys == NULL
                     && (skkeys = sk_OPENSSL_STRING_new_null()) == NULL)
                     goto end;
-                sk_OPENSSL_STRING_push(skkeys, keyfile);
+                if (sk_OPENSSL_STRING_push(skkeys, keyfile) <= 0)
+                    goto end;
             }
             keyfile = opt_arg();
             break;
@@ -620,7 +626,8 @@ int cms_main(int argc, char **argv)
                                  "recipient certificate file");
                 if (cert == NULL)
                     goto end;
-                sk_X509_push(encerts, cert);
+                if (!sk_X509_push(encerts, cert))
+                    goto end;
                 cert = NULL;
             } else {
                 recipfile = opt_arg();
@@ -659,7 +666,8 @@ int cms_main(int argc, char **argv)
                     key_param->next = nparam;
                 key_param = nparam;
             }
-            sk_OPENSSL_STRING_push(key_param->param, opt_arg());
+            if (sk_OPENSSL_STRING_push(key_param->param, opt_arg()) <= 0)
+                goto end;
             break;
         case OPT_V_CASES:
             if (!opt_verify(o, vpm))
@@ -748,12 +756,14 @@ int cms_main(int argc, char **argv)
             if (sksigners == NULL
                 && (sksigners = sk_OPENSSL_STRING_new_null()) == NULL)
                 goto end;
-            sk_OPENSSL_STRING_push(sksigners, signerfile);
+            if (sk_OPENSSL_STRING_push(sksigners, signerfile) <= 0)
+                goto end;
             if (skkeys == NULL && (skkeys = sk_OPENSSL_STRING_new_null()) == NULL)
                 goto end;
             if (keyfile == NULL)
                 keyfile = signerfile;
-            sk_OPENSSL_STRING_push(skkeys, keyfile);
+            if (sk_OPENSSL_STRING_push(skkeys, keyfile) <= 0)
+                goto end;
         }
         if (sksigners == NULL) {
             BIO_printf(bio_err, "No signer certificate specified\n");
@@ -796,6 +806,9 @@ int cms_main(int argc, char **argv)
     if ((operation & SMIME_IP) == 0 && contfile != NULL)
         BIO_printf(bio_err,
                    "Warning: -contfile option is ignored for the given operation\n");
+    if (operation != SMIME_ENCRYPT && *argv != NULL)
+        BIO_printf(bio_err,
+                   "Warning: recipient certificate file parameters ignored for operation other than -encrypt\n");
 
     if ((flags & CMS_BINARY) != 0) {
         if (!(operation & SMIME_OP))
@@ -823,19 +836,14 @@ int cms_main(int argc, char **argv)
             goto end;
         }
 
-        if (*argv != NULL) {
-            if (operation == SMIME_ENCRYPT) {
-                for (; *argv != NULL; argv++) {
-                    cert = load_cert(*argv, FORMAT_UNDEF,
-                                     "recipient certificate file");
-                    if (cert == NULL)
-                        goto end;
-                    sk_X509_push(encerts, cert);
-                    cert = NULL;
-                }
-            } else {
-                BIO_printf(bio_err, "Warning: recipient certificate file parameters ignored for operation other than -encrypt\n");
-            }
+        for (; *argv != NULL; argv++) {
+            cert = load_cert(*argv, FORMAT_UNDEF,
+                             "recipient certificate file");
+            if (cert == NULL)
+                goto end;
+            if (!sk_X509_push(encerts, cert))
+                goto end;
+            cert = NULL;
         }
     }
 
@@ -1015,8 +1023,15 @@ int cms_main(int argc, char **argv)
             pwri_tmp = NULL;
         }
         if (!(flags & CMS_STREAM)) {
-            if (!CMS_final(cms, in, NULL, flags))
+            if (!CMS_final(cms, in, NULL, flags)) {
+                if (originator != NULL
+                    && ERR_GET_REASON(ERR_peek_error())
+                    == CMS_R_ERROR_UNSUPPORTED_STATIC_KEY_AGREEMENT) {
+                    BIO_printf(bio_err, "Cannot use originator for encryption\n");
+                    goto end;
+                }
                 goto end;
+            }
         }
     } else if (operation == SMIME_ENCRYPTED_ENCRYPT) {
         cms = CMS_EncryptedData_encrypt_ex(in, cipher, secret_key,
@@ -1262,6 +1277,7 @@ int cms_main(int argc, char **argv)
     X509_free(cert);
     X509_free(recip);
     X509_free(signer);
+    X509_free(originator);
     EVP_PKEY_free(key);
     EVP_CIPHER_free(cipher);
     EVP_CIPHER_free(wrap_cipher);
@@ -1416,6 +1432,7 @@ static CMS_ReceiptRequest
                       STACK_OF(OPENSSL_STRING) *rr_from)
 {
     STACK_OF(GENERAL_NAMES) *rct_to = NULL, *rct_from = NULL;
+    CMS_ReceiptRequest *rr;
 
     rct_to = make_names_stack(rr_to);
     if (rct_to == NULL)
@@ -1427,10 +1444,14 @@ static CMS_ReceiptRequest
     } else {
         rct_from = NULL;
     }
-    return CMS_ReceiptRequest_create0_ex(NULL, -1, rr_allorfirst, rct_from,
-                                         rct_to, app_get0_libctx());
+    rr = CMS_ReceiptRequest_create0_ex(NULL, -1, rr_allorfirst, rct_from,
+                                       rct_to, app_get0_libctx());
+    if (rr == NULL)
+        goto err;
+    return rr;
  err:
     sk_GENERAL_NAMES_pop_free(rct_to, GENERAL_NAMES_free);
+    sk_GENERAL_NAMES_pop_free(rct_from, GENERAL_NAMES_free);
     return NULL;
 }
 

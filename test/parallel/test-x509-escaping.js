@@ -1,15 +1,16 @@
 'use strict';
 
 const common = require('../common');
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
 const assert = require('assert');
 const { X509Certificate } = require('crypto');
 const tls = require('tls');
 const fixtures = require('../common/fixtures');
 
-const { hasOpenSSL3 } = common;
+const { hasOpenSSL3 } = require('../common/crypto');
 
 // Test that all certificate chains provided by the reporter are rejected.
 {
@@ -66,21 +67,21 @@ const { hasOpenSSL3 } = common;
     'email:foo@example.com',
     // ... but should be escaped if they contain commas.
     'email:"foo@example.com\\u002c DNS:good.example.com"',
-    'DirName:/C=DE/L=Hannover',
-    // TODO(tniessen): support UTF8 in DirName
-    'DirName:"/C=DE/L=M\\\\xC3\\\\xBCnchen"',
-    'DirName:"/C=DE/L=Berlin\\u002c DNS:good.example.com"',
-    'DirName:"/C=DE/L=Berlin\\u002c DNS:good.example.com\\\\x00' +
-      'evil.example.com"',
-    'DirName:"/C=DE/L=Berlin\\u002c DNS:good.example.com\\\\\\\\x00' +
-      'evil.example.com"',
-    // These next two tests might be surprising. OpenSSL applies its own rules
-    // first, which introduce backslashes, which activate node's escaping.
-    // Unfortunately, there are also differences between OpenSSL 1.1.1 and 3.0.
-    'DirName:"/C=DE/L=Berlin\\\\x0D\\\\x0A"',
-    hasOpenSSL3 ?
-      'DirName:"/C=DE/L=Berlin\\\\/CN=good.example.com"' :
-      'DirName:/C=DE/L=Berlin/CN=good.example.com',
+    // New versions of Node.js use RFC2253 to print DirName entries, which
+    // almost always results in commas, which should be escaped properly.
+    'DirName:"L=Hannover\\u002cC=DE"',
+    // Node.js unsets ASN1_STRFLGS_ESC_MSB to prevent unnecessarily escaping
+    // Unicode characters, so Unicode characters should be preserved.
+    'DirName:"L=München\\u002cC=DE"',
+    'DirName:"L=Berlin\\\\\\u002c DNS:good.example.com\\u002cC=DE"',
+    // Node.js also unsets ASN1_STRFLGS_ESC_CTRL and relies on JSON-compatible
+    // escaping rules to safely escape control characters.
+    'DirName:"L=Berlin\\\\\\u002c DNS:good.example.com\\u0000' +
+      'evil.example.com\\u002cC=DE"',
+    'DirName:"L=Berlin\\\\\\u002c DNS:good.example.com\\\\\\\\\\u0000' +
+      'evil.example.com\\u002cC=DE"',
+    'DirName:"L=Berlin\\u000d\\u000a\\u002cC=DE"',
+    'DirName:"L=Berlin/CN=good.example.com\\u002cC=DE"',
     // Even OIDs that are well-known (such as the following, which is
     // sha256WithRSAEncryption) should be represented numerically only.
     'Registered ID:1.2.840.113549.1.1.11',
@@ -88,22 +89,22 @@ const { hasOpenSSL3 } = common;
     // OpenSSL should not know it.
     'Registered ID:1.3.9999.12.34',
     hasOpenSSL3 ?
-      'othername: XmppAddr::abc123' :
+      'othername:XmppAddr:abc123' :
       'othername:<unsupported>',
     hasOpenSSL3 ?
-      'othername:" XmppAddr::abc123\\u002c DNS:good.example.com"' :
+      'othername:"XmppAddr:abc123\\u002c DNS:good.example.com"' :
       'othername:<unsupported>',
     hasOpenSSL3 ?
-      'othername:" XmppAddr::good.example.com\\u0000abc123"' :
+      'othername:"XmppAddr:good.example.com\\u0000abc123"' :
       'othername:<unsupported>',
     // This is unsupported because the OID is not recognized.
     'othername:<unsupported>',
-    hasOpenSSL3 ? 'othername: SRVName::abc123' : 'othername:<unsupported>',
+    hasOpenSSL3 ? 'othername:SRVName:abc123' : 'othername:<unsupported>',
     // This is unsupported because it is an SRVName with a UTF8String value,
     // which is not allowed for SRVName.
     'othername:<unsupported>',
     hasOpenSSL3 ?
-      'othername:" SRVName::abc\\u0000def"' :
+      'othername:"SRVName:abc\\u0000def"' :
       'othername:<unsupported>',
   ];
 
@@ -173,14 +174,14 @@ const { hasOpenSSL3 } = common;
       },
     },
     hasOpenSSL3 ? {
-      text: 'OCSP - othername: XmppAddr::good.example.com\n' +
+      text: 'OCSP - othername:XmppAddr:good.example.com\n' +
             'OCSP - othername:<unsupported>\n' +
-            'OCSP - othername: SRVName::abc123',
+            'OCSP - othername:SRVName:abc123',
       legacy: {
         'OCSP - othername': [
-          ' XmppAddr::good.example.com',
+          'XmppAddr:good.example.com',
           '<unsupported>',
-          ' SRVName::abc123',
+          'SRVName:abc123',
         ],
       },
     } : {
@@ -196,10 +197,10 @@ const { hasOpenSSL3 } = common;
       },
     },
     hasOpenSSL3 ? {
-      text: 'OCSP - othername:" XmppAddr::good.example.com\\u0000abc123"',
+      text: 'OCSP - othername:"XmppAddr:good.example.com\\u0000abc123"',
       legacy: {
         'OCSP - othername': [
-          ' XmppAddr::good.example.com\0abc123',
+          'XmppAddr:good.example.com\0abc123',
         ],
       },
     } : {
@@ -239,8 +240,17 @@ const { hasOpenSSL3 } = common;
         checkServerIdentity: (hostname, peerCert) => {
           assert.strictEqual(hostname, 'example.com');
           assert.deepStrictEqual(peerCert.infoAccess,
-                                 Object.assign(Object.create(null),
+                                 Object.assign({ __proto__: null },
                                                expected.legacy));
+
+          // toLegacyObject() should also produce the same properties. However,
+          // the X509Certificate is not aware of the chain, so we need to add
+          // the circular issuerCertificate reference manually for the assertion
+          // to be true.
+          const obj = cert.toLegacyObject();
+          assert.strictEqual(obj.issuerCertificate, undefined);
+          obj.issuerCertificate = obj;
+          assert.deepStrictEqual(peerCert, obj);
         },
       }, common.mustCall());
     }));
@@ -343,13 +353,22 @@ const { hasOpenSSL3 } = common;
         servername: 'example.com',
         checkServerIdentity: (hostname, peerCert) => {
           assert.strictEqual(hostname, 'example.com');
-          const expectedObject = Object.assign(Object.create(null),
+          const expectedObject = Object.assign({ __proto__: null },
                                                expected.legacy);
           assert.deepStrictEqual(peerCert.subject, expectedObject);
           // The issuer MUST be the same as the subject since the cert is
           // self-signed. Otherwise, OpenSSL would have already rejected the
           // certificate while connecting to the TLS server.
           assert.deepStrictEqual(peerCert.issuer, expectedObject);
+
+          // toLegacyObject() should also produce the same properties. However,
+          // the X509Certificate is not aware of the chain, so we need to add
+          // the circular issuerCertificate reference manually for the assertion
+          // to be true.
+          const obj = cert.toLegacyObject();
+          assert.strictEqual(obj.issuerCertificate, undefined);
+          obj.issuerCertificate = obj;
+          assert.deepStrictEqual(peerCert, obj);
         },
       }, common.mustCall());
     }));
@@ -481,8 +500,6 @@ const { hasOpenSSL3 } = common;
     tls.connect(port, {
       ca: cert,
       servername,
-    }, common.mustCall(() => {
-      // Do nothing, the server will close the connection.
-    }));
+    }, common.mustCall());
   }));
 }

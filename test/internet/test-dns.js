@@ -97,11 +97,11 @@ TEST(async function test_resolve4_ttl(done) {
   }
 
   validateResult(await dnsPromises.resolve4(addresses.INET4_HOST, {
-    ttl: true
+    ttl: true,
   }));
 
   const req = dns.resolve4(addresses.INET4_HOST, {
-    ttl: true
+    ttl: true,
   }, function(err, result) {
     assert.ifError(err);
     validateResult(result);
@@ -125,11 +125,11 @@ TEST(async function test_resolve6_ttl(done) {
   }
 
   validateResult(await dnsPromises.resolve6(addresses.INET6_HOST, {
-    ttl: true
+    ttl: true,
   }));
 
   const req = dns.resolve6(addresses.INET6_HOST, {
-    ttl: true
+    ttl: true,
   }, function(err, result) {
     assert.ifError(err);
     validateResult(result);
@@ -479,6 +479,47 @@ TEST(function test_resolveCname_failure(done) {
   checkWrap(req);
 });
 
+TEST(async function test_resolveTlsa(done) {
+  function validateResult(result) {
+    assert.ok(Array.isArray(result));
+    assert.ok(result.length >= 1);
+    for (const record of result) {
+      assert.strictEqual(typeof record.certUsage, 'number');
+      assert.strictEqual(typeof record.selector, 'number');
+      assert.strictEqual(typeof record.match, 'number');
+      assert.ok(record.data instanceof ArrayBuffer);
+    }
+  }
+
+  validateResult(await dnsPromises.resolveTlsa(addresses.TLSA_HOST));
+
+  const req = dns.resolveTlsa(addresses.TLSA_HOST, function(err, records) {
+    assert.ifError(err);
+    validateResult(records);
+    done();
+  });
+
+  checkWrap(req);
+});
+
+TEST(function test_resolveTlsa_failure(done) {
+  dnsPromises.resolveTlsa(addresses.NOT_FOUND)
+    .then(common.mustNotCall())
+    .catch(common.mustCall((err) => {
+      assert.strictEqual(err.code, 'ENOTFOUND');
+    }));
+
+  const req = dns.resolveTlsa(addresses.NOT_FOUND, function(err, result) {
+    assert.ok(err instanceof Error);
+    assert.strictEqual(err.code, 'ENOTFOUND');
+
+    assert.strictEqual(result, undefined);
+
+    done();
+  });
+
+  checkWrap(req);
+});
 
 TEST(async function test_resolveTxt(done) {
   function validateResult(result) {
@@ -555,7 +596,7 @@ TEST(async function test_lookup_ip_all(done) {
       assert.strictEqual(family, undefined);
       validateResult(ips);
       done();
-    }
+    },
   );
 
   checkWrap(req);
@@ -621,7 +662,7 @@ TEST(async function test_lookup_all_mixed(done) {
   validateResult(await dnsPromises.lookup(addresses.INET_HOST, { all: true }));
 
   const req = dns.lookup(addresses.INET_HOST, {
-    all: true
+    all: true,
   }, function(err, ips) {
     assert.ifError(err);
     validateResult(ips);
@@ -654,7 +695,7 @@ TEST(function test_reverse_failure(done) {
     .then(common.mustNotCall())
     .catch(common.expectsError({
       code: 'ENOTFOUND',
-      hostname: '203.0.113.0'
+      hostname: '203.0.113.0',
     }));
 
   // 203.0.113.0/24 are addresses reserved for (RFC) documentation use only
@@ -676,7 +717,7 @@ TEST(function test_lookup_failure(done) {
     .then(common.mustNotCall())
     .catch(common.expectsError({
       code: 'ENOTFOUND',
-      hostname: addresses.NOT_FOUND
+      hostname: addresses.NOT_FOUND,
     }));
 
   const req = dns.lookup(addresses.NOT_FOUND, (err) => {
@@ -722,7 +763,7 @@ console.log(`looking up ${addresses.INET4_HOST}..`);
 const cares = internalBinding('cares_wrap');
 const req = new cares.GetAddrInfoReqWrap();
 cares.getaddrinfo(req, addresses.INET4_HOST, 4,
-  /* hints */ 0, /* verbatim */ true);
+  /* hints */ 0, /* order */ cares.DNS_ORDER_VERBATIM);
 
 req.oncomplete = function(err, domains) {
   assert.strictEqual(err, 0);

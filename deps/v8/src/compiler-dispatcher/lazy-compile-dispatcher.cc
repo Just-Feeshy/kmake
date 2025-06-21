@@ -7,23 +7,19 @@
 #include <atomic>
 
 #include "include/v8-platform.h"
-#include "src/ast/ast.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/time.h"
 #include "src/codegen/compiler.h"
 #include "src/common/globals.h"
+#include "src/execution/isolate.h"
 #include "src/flags/flags.h"
-#include "src/handles/global-handles-inl.h"
 #include "src/heap/parked-scope.h"
 #include "src/logging/counters.h"
 #include "src/logging/runtime-call-stats-scope.h"
-#include "src/numbers/hash-seed-inl.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/objects-inl.h"
 #include "src/parsing/parse-info.h"
-#include "src/parsing/parser.h"
-#include "src/roots/roots.h"
-#include "src/security/external-pointer.h"
+#include "src/parsing/scanner.h"
 #include "src/tasks/cancelable-task.h"
 #include "src/tasks/task-utils.h"
 #include "src/zone/zone-list-inl.h"  // crbug.com/v8/8816
@@ -47,9 +43,9 @@ class LazyCompileDispatcher::JobTask : public v8::JobTask {
   size_t GetMaxConcurrency(size_t worker_count) const final {
     size_t n = lazy_compile_dispatcher_->num_jobs_for_background_.load(
         std::memory_order_relaxed);
-    if (FLAG_lazy_compile_dispatcher_max_threads == 0) return n;
+    if (v8_flags.lazy_compile_dispatcher_max_threads == 0) return n;
     return std::min(
-        n, static_cast<size_t>(FLAG_lazy_compile_dispatcher_max_threads));
+        n, static_cast<size_t>(v8_flags.lazy_compile_dispatcher_max_threads));
   }
 
  private:
@@ -73,7 +69,7 @@ LazyCompileDispatcher::LazyCompileDispatcher(Isolate* isolate,
           reinterpret_cast<v8::Isolate*>(isolate))),
       platform_(platform),
       max_stack_size_(max_stack_size),
-      trace_compiler_dispatcher_(FLAG_trace_compiler_dispatcher),
+      trace_compiler_dispatcher_(v8_flags.trace_compiler_dispatcher),
       idle_task_manager_(new CancelableTaskManager()),
       idle_task_scheduled_(false),
       num_jobs_for_background_(0),
@@ -96,45 +92,48 @@ namespace {
 // into that. Since we have two optional slots (preparse data and job), this
 // gets a little messy.
 void SetUncompiledDataJobPointer(LocalIsolate* isolate,
-                                 Handle<SharedFunctionInfo> shared_info,
+                                 DirectHandle<SharedFunctionInfo> shared_info,
                                  Address job_address) {
-  UncompiledData uncompiled_data = shared_info->uncompiled_data();
-  switch (uncompiled_data.map(isolate).instance_type()) {
+  Tagged<UncompiledData> uncompiled_data =
+      shared_info->uncompiled_data(isolate);
+  switch (uncompiled_data->map(isolate)->instance_type()) {
     // The easy cases -- we already have a job slot, so can write into it and
     // return.
     case UNCOMPILED_DATA_WITH_PREPARSE_DATA_AND_JOB_TYPE:
-      UncompiledDataWithPreparseDataAndJob::cast(uncompiled_data)
-          .set_job(job_address);
+      Cast<UncompiledDataWithPreparseDataAndJob>(uncompiled_data)
+          ->set_job(job_address);
       break;
     case UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_WITH_JOB_TYPE:
-      UncompiledDataWithoutPreparseDataWithJob::cast(uncompiled_data)
-          .set_job(job_address);
+      Cast<UncompiledDataWithoutPreparseDataWithJob>(uncompiled_data)
+          ->set_job(job_address);
       break;
 
     // Otherwise, we'll have to allocate a new UncompiledData (with or without
     // preparse data as appropriate), set the job pointer on that, and update
     // the SharedFunctionInfo to use the new UncompiledData
     case UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE: {
-      Handle<String> inferred_name(uncompiled_data.inferred_name(), isolate);
+      Handle<String> inferred_name(uncompiled_data->inferred_name(), isolate);
       Handle<PreparseData> preparse_data(
-          UncompiledDataWithPreparseData::cast(uncompiled_data).preparse_data(),
+          Cast<UncompiledDataWithPreparseData>(uncompiled_data)
+              ->preparse_data(),
           isolate);
-      Handle<UncompiledDataWithPreparseDataAndJob> new_uncompiled_data =
+      DirectHandle<UncompiledDataWithPreparseDataAndJob> new_uncompiled_data =
           isolate->factory()->NewUncompiledDataWithPreparseDataAndJob(
-              inferred_name, uncompiled_data.start_position(),
-              uncompiled_data.end_position(), preparse_data);
+              inferred_name, uncompiled_data->start_position(),
+              uncompiled_data->end_position(), preparse_data);
 
       new_uncompiled_data->set_job(job_address);
       shared_info->set_uncompiled_data(*new_uncompiled_data);
       break;
     }
     case UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_TYPE: {
-      DCHECK(uncompiled_data.IsUncompiledDataWithoutPreparseData());
-      Handle<String> inferred_name(uncompiled_data.inferred_name(), isolate);
-      Handle<UncompiledDataWithoutPreparseDataWithJob> new_uncompiled_data =
-          isolate->factory()->NewUncompiledDataWithoutPreparseDataWithJob(
-              inferred_name, uncompiled_data.start_position(),
-              uncompiled_data.end_position());
+      DCHECK(IsUncompiledDataWithoutPreparseData(uncompiled_data));
+      Handle<String> inferred_name(uncompiled_data->inferred_name(), isolate);
+      DirectHandle<UncompiledDataWithoutPreparseDataWithJob>
+          new_uncompiled_data =
+              isolate->factory()->NewUncompiledDataWithoutPreparseDataWithJob(
+                  inferred_name, uncompiled_data->start_position(),
+                  uncompiled_data->end_position());
 
       new_uncompiled_data->set_job(job_address);
       shared_info->set_uncompiled_data(*new_uncompiled_data);
@@ -163,13 +162,13 @@ void LazyCompileDispatcher::Enqueue(
   SetUncompiledDataJobPointer(isolate, shared_info,
                               reinterpret_cast<Address>(job));
 
-  // Post a a background worker task to perform the compilation on the worker
+  // Post a background worker task to perform the compilation on the worker
   // thread.
   {
     base::MutexGuard lock(&mutex_);
     if (trace_compiler_dispatcher_) {
       PrintF("LazyCompileDispatcher: enqueued job for ");
-      shared_info->ShortPrint();
+      ShortPrint(*shared_info);
       PrintF("\n");
     }
 
@@ -184,15 +183,16 @@ void LazyCompileDispatcher::Enqueue(
 }
 
 bool LazyCompileDispatcher::IsEnqueued(
-    Handle<SharedFunctionInfo> function) const {
+    DirectHandle<SharedFunctionInfo> shared) const {
+  if (!shared->HasUncompiledData()) return false;
   Job* job = nullptr;
-  Object function_data = function->function_data(kAcquireLoad);
-  if (function_data.IsUncompiledDataWithPreparseDataAndJob()) {
+  Tagged<UncompiledData> data = shared->uncompiled_data(isolate_);
+  if (IsUncompiledDataWithPreparseDataAndJob(data)) {
     job = reinterpret_cast<Job*>(
-        UncompiledDataWithPreparseDataAndJob::cast(function_data).job());
-  } else if (function_data.IsUncompiledDataWithoutPreparseDataWithJob()) {
+        Cast<UncompiledDataWithPreparseDataAndJob>(data)->job());
+  } else if (IsUncompiledDataWithoutPreparseDataWithJob(data)) {
     job = reinterpret_cast<Job*>(
-        UncompiledDataWithoutPreparseDataWithJob::cast(function_data).job());
+        Cast<UncompiledDataWithoutPreparseDataWithJob>(data)->job());
   }
   return job != nullptr;
 }
@@ -213,7 +213,8 @@ void LazyCompileDispatcher::WaitForJobIfRunningOnBackground(
       // vector.
       pending_background_jobs_.erase(
           std::remove(pending_background_jobs_.begin(),
-                      pending_background_jobs_.end(), job));
+                      pending_background_jobs_.end(), job),
+          pending_background_jobs_.end());
       job->state = Job::State::kPendingToRunOnForeground;
       NotifyRemovedBackgroundJob(lock);
     } else {
@@ -225,7 +226,8 @@ void LazyCompileDispatcher::WaitForJobIfRunningOnBackground(
       // TODO(leszeks): Remove from finalizable jobs without walking the whole
       // vector.
       finalizable_jobs_.erase(
-          std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job));
+          std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job),
+          finalizable_jobs_.end());
       job->state = Job::State::kFinalizingNow;
     }
     return;
@@ -243,17 +245,19 @@ void LazyCompileDispatcher::WaitForJobIfRunningOnBackground(
   // TODO(leszeks): Remove from finalizable jobs without walking the whole
   // vector.
   finalizable_jobs_.erase(
-      std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job));
+      std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job),
+      finalizable_jobs_.end());
   job->state = Job::State::kFinalizingNow;
 }
 
-bool LazyCompileDispatcher::FinishNow(Handle<SharedFunctionInfo> function) {
+bool LazyCompileDispatcher::FinishNow(
+    DirectHandle<SharedFunctionInfo> function) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
                "V8.LazyCompilerDispatcherFinishNow");
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kCompileFinishNowOnDispatcher);
   if (trace_compiler_dispatcher_) {
     PrintF("LazyCompileDispatcher: finishing ");
-    function->ShortPrint();
+    ShortPrint(*function);
     PrintF(" now\n");
   }
 
@@ -266,7 +270,7 @@ bool LazyCompileDispatcher::FinishNow(Handle<SharedFunctionInfo> function) {
   }
 
   if (job->state == Job::State::kPendingToRunOnForeground) {
-    job->task->Run();
+    job->task->RunOnMainThread(isolate_);
     job->state = Job::State::kFinalizingNow;
   }
 
@@ -284,7 +288,7 @@ bool LazyCompileDispatcher::FinishNow(Handle<SharedFunctionInfo> function) {
       job->task.get(), isolate_, Compiler::KEEP_EXCEPTION);
   job->state = Job::State::kFinalized;
 
-  DCHECK_NE(success, isolate_->has_pending_exception());
+  DCHECK_NE(success, isolate_->has_exception());
   DeleteJob(job);
 
   // Opportunistically finalize all other jobs for a maximum time of
@@ -298,10 +302,11 @@ bool LazyCompileDispatcher::FinishNow(Handle<SharedFunctionInfo> function) {
   return success;
 }
 
-void LazyCompileDispatcher::AbortJob(Handle<SharedFunctionInfo> shared_info) {
+void LazyCompileDispatcher::AbortJob(
+    DirectHandle<SharedFunctionInfo> shared_info) {
   if (trace_compiler_dispatcher_) {
     PrintF("LazyCompileDispatcher: aborting job for ");
-    shared_info->ShortPrint();
+    ShortPrint(*shared_info);
     PrintF("\n");
   }
   base::LockGuard<base::Mutex> lock(&mutex_);
@@ -319,7 +324,8 @@ void LazyCompileDispatcher::AbortJob(Handle<SharedFunctionInfo> shared_info) {
 
       pending_background_jobs_.erase(
           std::remove(pending_background_jobs_.begin(),
-                      pending_background_jobs_.end(), job));
+                      pending_background_jobs_.end(), job),
+          pending_background_jobs_.end());
       job->state = Job::State::kAbortingNow;
       NotifyRemovedBackgroundJob(lock);
     } else if (job->state == Job::State::kReadyToFinalize) {
@@ -328,7 +334,8 @@ void LazyCompileDispatcher::AbortJob(Handle<SharedFunctionInfo> shared_info) {
           1);
 
       finalizable_jobs_.erase(
-          std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job));
+          std::remove(finalizable_jobs_.begin(), finalizable_jobs_.end(), job),
+          finalizable_jobs_.end());
       job->state = Job::State::kAbortingNow;
     } else {
       UNREACHABLE();
@@ -371,14 +378,15 @@ void LazyCompileDispatcher::AbortAll() {
 }
 
 LazyCompileDispatcher::Job* LazyCompileDispatcher::GetJobFor(
-    Handle<SharedFunctionInfo> shared, const base::MutexGuard&) const {
-  Object function_data = shared->function_data(kAcquireLoad);
-  if (function_data.IsUncompiledDataWithPreparseDataAndJob()) {
+    DirectHandle<SharedFunctionInfo> shared, const base::MutexGuard&) const {
+  if (!shared->HasUncompiledData()) return nullptr;
+  Tagged<UncompiledData> data = shared->uncompiled_data(isolate_);
+  if (IsUncompiledDataWithPreparseDataAndJob(data)) {
     return reinterpret_cast<Job*>(
-        UncompiledDataWithPreparseDataAndJob::cast(function_data).job());
-  } else if (function_data.IsUncompiledDataWithoutPreparseDataWithJob()) {
+        Cast<UncompiledDataWithPreparseDataAndJob>(data)->job());
+  } else if (IsUncompiledDataWithoutPreparseDataWithJob(data)) {
     return reinterpret_cast<Job*>(
-        UncompiledDataWithoutPreparseDataWithJob::cast(function_data).job());
+        Cast<UncompiledDataWithoutPreparseDataWithJob>(data)->job());
   }
   return nullptr;
 }
@@ -400,17 +408,16 @@ void LazyCompileDispatcher::DoBackgroundWork(JobDelegate* delegate) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
                "V8.LazyCompileDispatcherDoBackgroundWork");
 
-  WorkerThreadRuntimeCallStatsScope worker_thread_scope(
-      worker_thread_runtime_call_stats_);
-
-  LocalIsolate isolate(isolate_, ThreadKind::kBackground,
-                       worker_thread_scope.Get());
+  LocalIsolate isolate(isolate_, ThreadKind::kBackground);
   UnparkedScope unparked_scope(&isolate);
   LocalHandleScope handle_scope(&isolate);
 
   ReusableUnoptimizedCompileState reusable_state(&isolate);
 
-  while (!delegate->ShouldYield()) {
+  while (true) {
+    // Return immediately on yield, avoiding the second loop.
+    if (delegate->ShouldYield()) return;
+
     Job* job = nullptr;
     {
       base::MutexGuard lock(&mutex_);
@@ -459,7 +466,7 @@ void LazyCompileDispatcher::DoBackgroundWork(JobDelegate* delegate) {
   while (!delegate->ShouldYield()) {
     Job* job = nullptr;
     {
-      base::MutexGuard lock(&job_dispose_mutex_);
+      base::MutexGuard lock(&mutex_);
       if (jobs_to_dispose_.empty()) break;
       job = jobs_to_dispose_.back();
       jobs_to_dispose_.pop_back();
@@ -541,13 +548,8 @@ void LazyCompileDispatcher::DoIdleWork(double deadline_in_seconds) {
 
 void LazyCompileDispatcher::DeleteJob(Job* job) {
   DCHECK(job->state == Job::State::kFinalized);
-#ifdef DEBUG
-  {
-    base::MutexGuard lock(&mutex_);
-    all_jobs_.erase(job);
-  }
-#endif
-  delete job;
+  base::MutexGuard lock(&mutex_);
+  DeleteJob(job, lock);
 }
 
 void LazyCompileDispatcher::DeleteJob(Job* job, const base::MutexGuard&) {
@@ -555,7 +557,6 @@ void LazyCompileDispatcher::DeleteJob(Job* job, const base::MutexGuard&) {
 #ifdef DEBUG
   all_jobs_.erase(job);
 #endif
-  base::MutexGuard lock(&job_dispose_mutex_);
   jobs_to_dispose_.push_back(job);
   if (jobs_to_dispose_.size() == 1) {
     num_jobs_for_background_++;

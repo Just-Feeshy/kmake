@@ -27,6 +27,7 @@ const {
   rename,
   rmdir,
   stat,
+  statfs,
   symlink,
   truncate,
   unlink,
@@ -56,31 +57,43 @@ assert.strictEqual(
     {
       code: 'ENOENT',
       name: 'Error',
-      message: /^ENOENT: no such file or directory, access/
+      message: /^ENOENT: no such file or directory, access/,
+      stack: /at async ok\.rejects/
     }
-  );
+  ).then(common.mustCall());
 
   assert.rejects(
     access(__filename, 8),
     {
       code: 'ERR_OUT_OF_RANGE',
-      message: /"mode".*must be an integer >= 0 && <= 7\. Received 8$/
     }
-  );
+  ).then(common.mustCall());
 
   assert.rejects(
     access(__filename, { [Symbol.toPrimitive]() { return 5; } }),
     {
       code: 'ERR_INVALID_ARG_TYPE',
-      message: /"mode" argument.+integer\. Received an instance of Object$/
     }
-  );
+  ).then(common.mustCall());
 }
 
 function verifyStatObject(stat) {
   assert.strictEqual(typeof stat, 'object');
   assert.strictEqual(typeof stat.dev, 'number');
   assert.strictEqual(typeof stat.mode, 'number');
+}
+
+function verifyStatFsObject(stat, isBigint = false) {
+  const valueType = isBigint ? 'bigint' : 'number';
+
+  assert.strictEqual(typeof stat, 'object');
+  assert.strictEqual(typeof stat.type, valueType);
+  assert.strictEqual(typeof stat.bsize, valueType);
+  assert.strictEqual(typeof stat.blocks, valueType);
+  assert.strictEqual(typeof stat.bfree, valueType);
+  assert.strictEqual(typeof stat.bavail, valueType);
+  assert.strictEqual(typeof stat.files, valueType);
+  assert.strictEqual(typeof stat.ffree, valueType);
 }
 
 async function getHandle(dest) {
@@ -139,6 +152,18 @@ async function executeOnHandle(dest, func) {
       });
     }
 
+    // File system stats
+    {
+      const statFs = await statfs(dest);
+      verifyStatFsObject(statFs);
+    }
+
+    // File system stats bigint
+    {
+      const statFs = await statfs(dest, { bigint: true });
+      verifyStatFsObject(statFs, true);
+    }
+
     // Test fs.read promises when length to read is zero bytes
     {
       const dest = path.resolve(tmpDir, 'test1.js');
@@ -153,11 +178,21 @@ async function executeOnHandle(dest, func) {
       });
     }
 
-    // Use fallback buffer allocation when input not buffer
+    // Use fallback buffer allocation when first argument is null
     {
       await executeOnHandle(dest, async (handle) => {
-        const ret = await handle.read(0, 0, 0, 0);
+        const ret = await handle.read(null, 0, 0, 0);
         assert.strictEqual(ret.buffer.length, 16384);
+      });
+    }
+
+    // TypeError if buffer is not ArrayBufferView or nullable object
+    {
+      await executeOnHandle(dest, async (handle) => {
+        await assert.rejects(
+          async () => handle.read(0, 0, 0, 0),
+          { code: 'ERR_INVALID_ARG_TYPE' }
+        );
       });
     }
 
@@ -279,7 +314,7 @@ async function executeOnHandle(dest, func) {
                            (await readlink(newLink)).toLowerCase());
 
         const newMode = 0o666;
-        if (common.isOSX) {
+        if (common.isMacOS) {
           // `lchmod` is only available on macOS.
           await lchmod(newLink, newMode);
           stats = await lstat(newLink);
@@ -373,7 +408,7 @@ async function executeOnHandle(dest, func) {
       const dir = path.join(tmpDir, nextdir(), nextdir());
       await mkdir(path.dirname(dir));
       await writeFile(dir, '');
-      assert.rejects(
+      await assert.rejects(
         mkdir(dir, { recursive: true }),
         {
           code: 'EEXIST',
@@ -390,7 +425,7 @@ async function executeOnHandle(dest, func) {
       const dir = path.join(file, nextdir(), nextdir());
       await mkdir(path.dirname(file));
       await writeFile(file, '');
-      assert.rejects(
+      await assert.rejects(
         mkdir(dir, { recursive: true }),
         {
           code: 'ENOTDIR',
@@ -429,14 +464,14 @@ async function executeOnHandle(dest, func) {
             code: 'ERR_INVALID_ARG_TYPE',
             name: 'TypeError'
           }
-        );
+        ).then(common.mustCall());
       });
     }
 
     // `mkdtemp` with invalid numeric prefix
     {
       await mkdtemp(path.resolve(tmpDir, 'FOO'));
-      assert.rejects(
+      await assert.rejects(
         // mkdtemp() expects to get a string prefix.
         async () => mkdtemp(1),
         {

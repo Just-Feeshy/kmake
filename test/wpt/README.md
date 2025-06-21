@@ -27,16 +27,16 @@ it's not yet clear how compliant the implementation is,
 the requirements and expected failures can be figured out in a later step
 when the tests are run for the first time.
 
-See [Format of a status JSON file](#status-format) for details.
+See [Format of a status file](#status-format) for details.
 
 ### 2. Pull the WPT files
 
 Use the [git node wpt][] command to download the WPT files into
 `test/fixtures/wpt`. For example, to add URL tests:
 
-```text
-$ cd /path/to/node/project
-$ git node wpt url
+```bash
+cd /path/to/node/project
+git node wpt url
 ```
 
 ### 3. Create the test driver
@@ -46,7 +46,6 @@ For example, for the URL tests, add a file `test/wpt/test-url.js`:
 ```js
 'use strict';
 
-require('../common');
 const { WPTRunner } = require('../common/wpt');
 
 const runner = new WPTRunner('url');
@@ -72,14 +71,14 @@ with the WPT harness while taking the status file into account.
 Run the test using `tools/test.py` and see if there are any failures.
 For example, to run all the URL tests under `test/fixtures/wpt/url`:
 
-```text
-$ tools/test.py wpt/test-url
+```bash
+tools/test.py wpt/test-url
 ```
 
 To run a specific test in WPT, for example, `url/url-searchparams.any.js`,
 pass the file name as argument to the corresponding test driver:
 
-```text
+```bash
 node test/wpt/test-url.js url-searchparams.any.js
 ```
 
@@ -91,11 +90,15 @@ add this to `test/wpt/status/url.json`:
 
 ```json
   "url-searchparams.any.js": {
-    "fail": "explain why the test fails, ideally with links"
+    "fail": {
+      "expected": [
+        "test name in the WPT test case, e.g. second argument passed to test()"
+      ]
+    }
   }
 ```
 
-See [Format of a status JSON file](#status-format) for details.
+See [Format of a status file](#status-format) for details.
 
 ### 5. Commit the changes and submit a Pull Request
 
@@ -144,19 +147,28 @@ expected failures.
 
 <a id="status-format"></a>
 
-## Format of a status JSON file
+## Format of a status file
 
-```text
+```json
 {
   "something.scope.js": {  // the file name
     // Optional: If the requirement is not met, this test will be skipped
-    "requires": ["small-icu"],  // supports: "small-icu", "full-icu"
+    "requires": ["small-icu"],  // supports: "small-icu", "full-icu", "crypto"
 
     // Optional: the test will be skipped with the reason printed
     "skip": "explain why we cannot run a test that's supposed to pass",
 
-    // Optional: the test will be skipped with the reason printed
-    "fail": "explain why we the test is expected to fail"
+    // Optional: failing tests
+    "fail": {
+      "note": "You may leave an optional arbitrary note e.g. with TODOs",
+      "expected": [
+        "test name in the WPT test case, e.g. second argument passed to test()",
+        "another test name"
+      ],
+      "flaky": [
+        "flaky test name"
+      ]
+    }
   }
 }
 ```
@@ -165,6 +177,10 @@ A test may have to be skipped because it depends on another irrelevant
 Web API, or certain harness has not been ported in our test runner yet.
 In that case it needs to be marked with `skip` instead of `fail`.
 
+The status file may optionally also be a CJS module that exports the object.
+This allows for more complex logic to be used to determine the expected status
+of a test.
+
 [Web Platform Tests]: https://github.com/web-platform-tests/wpt
 [`test/fixtures/wpt/README.md`]: ../fixtures/wpt/README.md
-[git node wpt]: https://github.com/nodejs/node-core-utils/blob/master/docs/git-node.md#git-node-wpt
+[git node wpt]: https://github.com/nodejs/node-core-utils/blob/HEAD/docs/git-node.md#git-node-wpt

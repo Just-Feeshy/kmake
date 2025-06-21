@@ -8,15 +8,20 @@ const jsPrimitives = {
   number: 'Number',
   string: 'String',
   symbol: 'Symbol',
-  undefined: 'Undefined'
+  undefined: 'Undefined',
 };
 
 const jsGlobalObjectsUrl = `${jsDocPrefix}Reference/Global_Objects/`;
 const jsGlobalTypes = [
   'AggregateError', 'Array', 'ArrayBuffer', 'DataView', 'Date', 'Error',
-  'EvalError', 'Function', 'Map', 'Object', 'Promise', 'RangeError',
-  'ReferenceError', 'RegExp', 'Set', 'SharedArrayBuffer', 'SyntaxError',
-  'TypeError', 'TypedArray', 'URIError', 'Uint8Array',
+  'EvalError', 'Function', 'Map', 'NaN', 'Object', 'Promise', 'Proxy', 'RangeError',
+  'ReferenceError', 'RegExp', 'Set', 'SharedArrayBuffer', 'SyntaxError', 'Symbol',
+  'TypeError', 'URIError', 'WeakMap', 'WeakSet',
+
+  'TypedArray',
+  'Float16Array', 'Float32Array', 'Float64Array',
+  'Int8Array', 'Int16Array', 'Int32Array',
+  'Uint8Array', 'Uint8ClampedArray', 'Uint16Array', 'Uint32Array',
 ];
 
 const customTypesMap = {
@@ -43,6 +48,7 @@ const customTypesMap = {
     `${jsDocPrefix}Reference/Global_Objects/WebAssembly/Instance`,
 
   'Blob': 'buffer.html#class-blob',
+  'File': 'buffer.html#class-file',
 
   'BroadcastChannel':
     'worker_threads.html#class-broadcastchannel-' +
@@ -56,6 +62,8 @@ const customTypesMap = {
   'Module Namespace Object':
     'https://tc39.github.io/ecma262/#sec-module-namespace-exotic-objects',
 
+  'AsyncLocalStorage': 'async_context.html#class-asynclocalstorage',
+
   'AsyncHook': 'async_hooks.html#async_hookscreatehookcallbacks',
   'AsyncResource': 'async_hooks.html#class-asyncresource',
 
@@ -67,8 +75,8 @@ const customTypesMap = {
 
   'cluster.Worker': 'cluster.html#class-worker',
 
-  'Cipher': 'crypto.html#class-cipher',
-  'Decipher': 'crypto.html#class-decipher',
+  'Cipheriv': 'crypto.html#class-cipheriv',
+  'Decipheriv': 'crypto.html#class-decipheriv',
   'DiffieHellman': 'crypto.html#class-diffiehellman',
   'DiffieHellmanGroup': 'crypto.html#class-diffiehellmangroup',
   'ECDH': 'crypto.html#class-ecdh',
@@ -79,6 +87,7 @@ const customTypesMap = {
   'Verify': 'crypto.html#class-verify',
   'crypto.constants': 'crypto.html#cryptoconstants',
 
+  'Algorithm': 'webcrypto.html#class-algorithm',
   'CryptoKey': 'webcrypto.html#class-cryptokey',
   'CryptoKeyPair': 'webcrypto.html#class-cryptokeypair',
   'Crypto': 'webcrypto.html#class-crypto',
@@ -86,45 +95,36 @@ const customTypesMap = {
   'RsaOaepParams': 'webcrypto.html#class-rsaoaepparams',
   'AesCtrParams': 'webcrypto.html#class-aesctrparams',
   'AesCbcParams': 'webcrypto.html#class-aescbcparams',
+  'AesDerivedKeyParams': 'webcrypto.html#class-aesderivedkeyparams',
   'AesGcmParams': 'webcrypto.html#class-aesgcmparams',
-  'AesKwParams': 'webcrypto.html#class-aeskwparams',
   'EcdhKeyDeriveParams': 'webcrypto.html#class-ecdhkeyderiveparams',
   'HkdfParams': 'webcrypto.html#class-hkdfparams',
+  'KeyAlgorithm': 'webcrypto.html#class-keyalgorithm',
   'Pbkdf2Params': 'webcrypto.html#class-pbkdf2params',
+  'HmacKeyAlgorithm': 'webcrypto.html#class-hmackeyalgorithm',
   'HmacKeyGenParams': 'webcrypto.html#class-hmackeygenparams',
+  'AesKeyAlgorithm': 'webcrypto.html#class-aeskeyalgorithm',
   'AesKeyGenParams': 'webcrypto.html#class-aeskeygenparams',
+  'RsaHashedKeyAlgorithm':
+    'webcrypto.html#class-rsahashedkeyalgorithm',
   'RsaHashedKeyGenParams':
     'webcrypto.html#class-rsahashedkeygenparams',
+  'EcKeyAlgorithm': 'webcrypto.html#class-eckeyalgorithm',
   'EcKeyGenParams': 'webcrypto.html#class-eckeygenparams',
   'RsaHashedImportParams':
     'webcrypto.html#class-rsahashedimportparams',
   'EcKeyImportParams': 'webcrypto.html#class-eckeyimportparams',
   'HmacImportParams': 'webcrypto.html#class-hmacimportparams',
-  'AesImportParams': 'webcrypto.html#class-aesimportparams',
-  'Pbkdf2ImportParams': 'webcrypto.html#class-pbkdf2importparams',
-  'HmacParams': 'webcrypto.html#class-hmacparams',
   'EcdsaParams': 'webcrypto.html#class-ecdsaparams',
   'RsaPssParams': 'webcrypto.html#class-rsapssparams',
-  'RsaSignParams': 'webcrypto.html#class-rsasignparams',
-  'NodeDhImportParams': 'webcrypto.html#class-nodedhimportparams',
-  'NodeDhKeyGenParams': 'webcrypto.html#class-nodedhkeygenparams',
-  'NodeDhDeriveBitsParams':
-    'webcrypto.html#class-nodedhderivebitsparams',
-  'NodeDsaImportParams': 'webcrypto.html#class-nodedsaimportparams',
-  'NodeDsaKeyGenParams': 'webcrypto.html#class-nodedsakeygenparams',
-  'NodeDsaSignParams': 'webcrypto.html#class-nodedsasignparams',
-  'NodeScryptImportParams':
-    'webcrypto.html#class-nodescryptimportparams',
-  'NodeScryptParams': 'webcrypto.html#class-nodescryptparams',
-  'NodeEdKeyImportParams':
-    'webcrypto.html#class-nodeedkeyimportparams',
-  'NodeEdKeyGenParams':
-    'webcrypto.html#class-nodeedkeygenparams',
+  'Ed448Params': 'webcrypto.html#class-ed448params',
 
   'dgram.Socket': 'dgram.html#class-dgramsocket',
 
   'Channel': 'diagnostics_channel.html#class-channel',
+  'TracingChannel': 'diagnostics_channel.html#class-tracingchannel',
 
+  'DatabaseSync': 'sqlite.html#class-databasesync',
   'Domain': 'domain.html#class-domain',
 
   'errors.Error': 'errors.html#class-error',
@@ -134,6 +134,7 @@ const customTypesMap = {
   'EventEmitter': 'events.html#class-eventemitter',
   'EventTarget': 'events.html#class-eventtarget',
   'Event': 'events.html#class-event',
+  'CustomEvent': 'events.html#class-customevent',
   'EventListener': 'events.html#event-listener',
 
   'FileHandle': 'fs.html#class-filehandle',
@@ -142,12 +143,14 @@ const customTypesMap = {
   'fs.FSWatcher': 'fs.html#class-fsfswatcher',
   'fs.ReadStream': 'fs.html#class-fsreadstream',
   'fs.Stats': 'fs.html#class-fsstats',
+  'fs.StatFs': 'fs.html#class-fsstatfs',
   'fs.StatWatcher': 'fs.html#class-fsstatwatcher',
   'fs.WriteStream': 'fs.html#class-fswritestream',
 
   'http.Agent': 'http.html#class-httpagent',
   'http.ClientRequest': 'http.html#class-httpclientrequest',
   'http.IncomingMessage': 'http.html#class-httpincomingmessage',
+  'http.OutgoingMessage': 'http.html#class-httpoutgoingmessage',
   'http.Server': 'http.html#class-httpserver',
   'http.ServerResponse': 'http.html#class-httpserverresponse',
 
@@ -163,6 +166,7 @@ const customTypesMap = {
   'Http2Session': 'http2.html#class-http2session',
   'Http2Stream': 'http2.html#class-http2stream',
   'ServerHttp2Stream': 'http2.html#class-serverhttp2stream',
+  'ServerHttp2Session': 'http2.html#class-serverhttp2session',
 
   'https.Server': 'https.html#class-httpsserver',
 
@@ -170,6 +174,8 @@ const customTypesMap = {
 
   'module.SourceMap':
     'module.html#class-modulesourcemap',
+
+  'MockModuleContext': 'test.html#class-mockmodulecontext',
 
   'require': 'modules.html#requireid',
 
@@ -193,7 +199,7 @@ const customTypesMap = {
   'PerformanceNodeTiming':
     'perf_hooks.html#class-performancenodetiming',
   'PerformanceObserver':
-    'perf_hooks.html#class-perf_hooksperformanceobserver',
+    'perf_hooks.html#class-performanceobserver',
   'PerformanceObserverEntryList':
     'perf_hooks.html#class-performanceobserverentrylist',
 
@@ -205,6 +211,9 @@ const customTypesMap = {
     'readline.html#class-readlinepromisesinterface',
 
   'repl.REPLServer': 'repl.html#class-replserver',
+
+  'Session': 'sqlite.html#class-session',
+  'StatementSync': 'sqlite.html#class-statementsync',
 
   'Stream': 'stream.html#stream',
   'stream.Duplex': 'stream.html#class-streamduplex',
@@ -220,18 +229,29 @@ const customTypesMap = {
   'Timeout': 'timers.html#class-timeout',
   'Timer': 'timers.html#timers',
 
+  'TestsStream': 'test.html#class-testsstream',
+
   'tls.SecureContext': 'tls.html#tlscreatesecurecontextoptions',
   'tls.Server': 'tls.html#class-tlsserver',
   'tls.TLSSocket': 'tls.html#class-tlstlssocket',
 
   'Tracing': 'tracing.html#tracing-object',
 
+  'tty.ReadStream': 'tty.html#class-ttyreadstream',
+  'tty.WriteStream': 'tty.html#class-ttywritestream',
+
   'URL': 'url.html#the-whatwg-url-api',
   'URLSearchParams': 'url.html#class-urlsearchparams',
+
+  'MIMEParams': 'util.html#class-utilmimeparams',
 
   'vm.Module': 'vm.html#class-vmmodule',
   'vm.Script': 'vm.html#class-vmscript',
   'vm.SourceTextModule': 'vm.html#class-vmsourcetextmodule',
+  'vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER':
+      'vm.html#vmconstantsuse_main_context_default_loader',
+  'vm.constants.DONT_CONTEXTIFY':
+      'vm.html#vmconstantsdont_contextify',
 
   'MessagePort': 'worker_threads.html#class-messageport',
   'Worker': 'worker_threads.html#class-worker',
@@ -239,41 +259,69 @@ const customTypesMap = {
   'X509Certificate': 'crypto.html#class-x509certificate',
 
   'zlib options': 'zlib.html#class-options',
+  'zstd options': 'zlib.html#class-zstdoptions',
 
   'ReadableStream':
-    'webstreams.md#class-readablestream',
+    'webstreams.html#class-readablestream',
   'ReadableStreamDefaultReader':
-    'webstreams.md#class-readablestreamdefaultreader',
+    'webstreams.html#class-readablestreamdefaultreader',
   'ReadableStreamBYOBReader':
-    'webstreams.md#class-readablestreambyobreader',
+    'webstreams.html#class-readablestreambyobreader',
   'ReadableStreamDefaultController':
-    'webstreams.md#class-readablestreamdefaultcontroller',
+    'webstreams.html#class-readablestreamdefaultcontroller',
   'ReadableByteStreamController':
-    'webstreams.md#class-readablebytestreamcontroller',
+    'webstreams.html#class-readablebytestreamcontroller',
   'ReadableStreamBYOBRequest':
-    'webstreams.md#class-readablestreambyobrequest',
+    'webstreams.html#class-readablestreambyobrequest',
   'WritableStream':
-    'webstreams.md#class-writablestream',
+    'webstreams.html#class-writablestream',
   'WritableStreamDefaultWriter':
-    'webstreams.md#class-writablestreamdefaultwriter',
+    'webstreams.html#class-writablestreamdefaultwriter',
   'WritableStreamDefaultController':
-    'webstreams.md#class-writablestreamdefaultcontroller',
+    'webstreams.html#class-writablestreamdefaultcontroller',
   'TransformStream':
-    'webstreams.md#class-transformstream',
+    'webstreams.html#class-transformstream',
   'TransformStreamDefaultController':
-    'webstreams.md#class-transformstreamdefaultcontroller',
+    'webstreams.html#class-transformstreamdefaultcontroller',
   'ByteLengthQueuingStrategy':
-    'webstreams.md#class-bytelengthqueuingstrategy',
+    'webstreams.html#class-bytelengthqueuingstrategy',
   'CountQueuingStrategy':
-    'webstreams.md#class-countqueuingstrategy',
+    'webstreams.html#class-countqueuingstrategy',
   'TextEncoderStream':
-    'webstreams.md#class-textencoderstream',
+    'webstreams.html#class-textencoderstream',
   'TextDecoderStream':
-    'webstreams.md#class-textdecoderstream',
+    'webstreams.html#class-textdecoderstream',
 
+  'FormData': 'https://developer.mozilla.org/en-US/docs/Web/API/FormData',
   'Headers': 'https://developer.mozilla.org/en-US/docs/Web/API/Headers',
   'Response': 'https://developer.mozilla.org/en-US/docs/Web/API/Response',
   'Request': 'https://developer.mozilla.org/en-US/docs/Web/API/Request',
+  'Disposable': 'https://tc39.es/proposal-explicit-resource-management/#sec-disposable-interface',
+
+  'quic.QuicEndpoint': 'quic.html#class-quicendpoint',
+  'quic.QuicEndpoint.Stats': 'quic.html#class-quicendpointstats',
+  'quic.QuicSession': 'quic.html#class-quicsession',
+  'quic.QuicSession.Stats': 'quic.html#class-quicsessionstats',
+  'quic.QuicStream': 'quic.html#class-quicstream',
+  'quic.QuicStream.Stats': 'quic.html#class-quicstreamstats',
+  'quic.EndpointOptions': 'quic.html#type-endpointoptions',
+  'quic.SessionOptions': 'quic.html#type-sessionoptions',
+  'quic.ApplicationOptions': 'quic.html#type-applicationoptions',
+  'quic.TlsOptions': 'quic.html#type-tlsoptions',
+  'quic.TransportParams': 'quic.html#type-transportparams',
+  'quic.OnSessionCallback': 'quic.html#callback-onsessioncallback',
+  'quic.OnStreamCallback': 'quic.html#callback-onstreamcallback',
+  'quic.OnDatagramCallback': 'quic.html#callback-ondatagramcallback',
+  'quic.OnDatagramStatusCallback': 'quic.html#callback-ondatagramstatuscallback',
+  'quic.OnPathValidationCallback': 'quic.html#callback-onpathvalidationcallback',
+  'quic.OnSessionTicketCallback': 'quic.html#callback-onsessionticketcallback',
+  'quic.OnVersionNegotiationCallback': 'quic.html#callback-onversionnegotiationcallback',
+  'quic.OnHandshakeCallback': 'quic.html#callback-onhandshakecallback',
+  'quic.OnBlockedCallback': 'quic.html#callback-onblockedcallback',
+  'quic.OnStreamErrorCallback': 'quic.html#callback-onstreamerrorcallback',
+  'quic.OnHeadersCallback': 'quic.html#callback-onheaderscallback',
+  'quic.OnTrailersCallback': 'quic.html#callback-ontrailerscallback',
+  'quic.OnPullCallback': 'quic.html#callback-onpullcallback',
 };
 
 const arrayPart = /(?:\[])+$/;
@@ -308,8 +356,8 @@ export function toLink(typeInput) {
           `<a href="${typeUrl}" class="type">&lt;${typeTextFull}&gt;</a>`);
       } else {
         throw new Error(
-          `Unrecognized type: '${typeTextFull}'.\n` +
-          `Please, edit the type or update '${import.meta.url}'.`
+          `Unrecognized type: '${typeTextFull}' in '${import.meta.url}'.\n` +
+          'Valid types can be found at https://github.com/nodejs/node/blob/HEAD/tools/doc/type-parser.mjs',
         );
       }
     } else {

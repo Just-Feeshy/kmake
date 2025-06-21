@@ -60,7 +60,12 @@ require(fixtures.path('resolve-paths', 'default', 'verify-paths.js'));
 {
   // builtinModules.
   builtinModules.forEach((mod) => {
+    // TODO(@jasnell): Remove once node:quic is no longer flagged
+    if (mod === 'node:quic') return;
     assert.strictEqual(require.resolve.paths(mod), null);
+    if (!mod.startsWith('node:')) {
+      assert.strictEqual(require.resolve.paths(`node:${mod}`), null);
+    }
   });
 
   // node_modules.
@@ -79,4 +84,14 @@ require(fixtures.path('resolve-paths', 'default', 'verify-paths.js'));
     // Shouldn't look up relative modules from 'node_modules'.
     assert.strictEqual(resolvedPaths.includes('/node_modules'), false);
   });
+}
+
+{
+  assert.strictEqual(require.resolve('node:test'), 'node:test');
+  assert.strictEqual(require.resolve('node:fs'), 'node:fs');
+
+  assert.throws(
+    () => require.resolve('node:unknown'),
+    { code: 'MODULE_NOT_FOUND' },
+  );
 }

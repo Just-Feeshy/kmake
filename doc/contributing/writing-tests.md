@@ -21,9 +21,22 @@ Add tests when:
 ## Test directory structure
 
 See [directory structure overview][] for outline of existing test and locations.
-When deciding on whether to expand an existing test file or create a new one,
-consider going through the files related to the subsystem.
-For example, look for `test-streams` when writing a test for `lib/streams.js`.
+
+## How to write a good test
+
+A good test should be written in a style that is optimial for debugging
+when it fails.
+
+In principle, when adding a new test, it should be placed in a new file.
+Unless there is strong motivation to do so, refrain from appending
+new test cases to an existing file. Similar to the reproductions we ask
+for in the issue tracker, a good test should be as minimal and isolated as
+possible to facilitate debugging.
+
+A good test should come with comments explaining what it tries to test,
+so that when it fails, other contributors can fix it with the full context
+of its intention, and be able to modify it in good confidence when the context
+changes.
 
 ## Test structure
 
@@ -37,8 +50,8 @@ const fixtures = require('../common/fixtures');                        // 3
 // This test ensures that the http-parser can handle UTF-8 characters  // 5
 // in the http header.                                                 // 6
 
-const assert = require('assert');                                      // 8
-const http = require('http');                                          // 9
+const assert = require('node:assert');                                 // 8
+const http = require('node:http');                                     // 9
 
 const server = http.createServer(common.mustCall((req, res) => {       // 11
   res.end('ok');                                                       // 12
@@ -46,7 +59,7 @@ const server = http.createServer(common.mustCall((req, res) => {       // 11
 server.listen(0, () => {                                               // 14
   http.get({                                                           // 15
     port: server.address().port,                                       // 16
-    headers: { 'Test': 'Düsseldorf' }                                  // 17
+    headers: { 'Test': 'Düsseldorf' },                                 // 17
   }, common.mustCall((res) => {                                        // 18
     assert.strictEqual(res.statusCode, 200);                           // 19
     server.close();                                                    // 20
@@ -95,13 +108,13 @@ designed to test.
 ### **Lines 8-9**
 
 ```js
-const assert = require('assert');
-const http = require('http');
+const assert = require('node:assert');
+const http = require('node:http');
 ```
 
-The test checks functionality in the `http` module.
+The test checks functionality in the `node:http` module.
 
-Most tests use the `assert` module to confirm expectations of the test.
+Most tests use the `node:assert` module to confirm expectations of the test.
 
 The require statements are sorted in
 [ASCII][] order (digits, upper
@@ -116,7 +129,7 @@ const server = http.createServer(common.mustCall((req, res) => {
 server.listen(0, () => {
   http.get({
     port: server.address().port,
-    headers: { 'Test': 'Düsseldorf' }
+    headers: { 'Test': 'Düsseldorf' },
   }, common.mustCall((res) => {
     assert.strictEqual(res.statusCode, 200);
     server.close();
@@ -173,8 +186,8 @@ explain this with a real test from the test suite.
 ```js
 'use strict';
 require('../common');
-const assert = require('assert');
-const http = require('http');
+const assert = require('node:assert');
+const http = require('node:http');
 
 let request = 0;
 let listening = 0;
@@ -192,7 +205,7 @@ const server = http.createServer((req, res) => {
   listening++;
   const options = {
     agent: null,
-    port: server.address().port
+    port: server.address().port,
   };
   http.get(options, (res) => {
     response++;
@@ -207,14 +220,14 @@ This test could be greatly simplified by using `common.mustCall` like this:
 ```js
 'use strict';
 const common = require('../common');
-const http = require('http');
+const http = require('node:http');
 
 const server = http.createServer(common.mustCall((req, res) => {
   res.end();
 })).listen(0, common.mustCall(() => {
   const options = {
     agent: null,
-    port: server.address().port
+    port: server.address().port,
   };
   http.get(options, common.mustCall((res) => {
     res.resume();
@@ -256,13 +269,13 @@ Node.js automatically crashes - and hence, the test fails - in the case of an
 
 ```js
 const common = require('../common');
-const assert = require('assert');
-const fs = require('fs').promises;
+const assert = require('node:assert');
+const fs = require('node:fs').promises;
 
 // Wrap the `onFulfilled` handler in `common.mustCall()`.
 fs.readFile('test-file').then(
   common.mustCall(
-    (content) => assert.strictEqual(content.toString(), 'test2')
+    (content) => assert.strictEqual(content.toString(), 'test2'),
   ));
 ```
 
@@ -280,18 +293,19 @@ A test that would require `internal/freelist` could start like this:
 // Flags: --expose-internals
 
 require('../common');
-const assert = require('assert');
-const freelist = require('internal/freelist');
+const assert = require('node:assert');
+const freelist = require('node:internal/freelist');
 ```
 
 In specific scenarios it may be useful to get a hold of `primordials` or
 `internalBinding()`. You can do so using
 
-```console
+```bash
 node --expose-internals -r internal/test/binding lib/fs.js
 ```
 
-This only works if you preload `internal/test/binding` by command line flag.
+This only works if you preload `node:internal/test/binding` by command line
+flag.
 
 ### Assertions
 
@@ -307,7 +321,19 @@ assert.throws(
   () => {
     throw new Error('Wrong value');
   },
-  /^Error: Wrong value$/ // Instead of something like /Wrong value/
+  /^Error: Wrong value$/, // Instead of something like /Wrong value/
+);
+```
+
+In the case of internal errors, prefer checking only the `code` property:
+
+```js
+assert.throws(
+  () => {
+    throw new ERR_FS_FILE_TOO_LARGE(`${sizeKiB} Kb`);
+  },
+  { code: 'ERR_FS_FILE_TOO_LARGE' },
+  // Do not include message: /^File size ([0-9]+ Kb) is greater than 2 GiB$/
 );
 ```
 
@@ -426,20 +452,20 @@ adding them to the `libraries` section in the cctest target.
 
 The test can be executed by running the `cctest` target:
 
-```console
-$ make cctest
+```bash
+make cctest
 ```
 
 A filter can be applied to run single/multiple test cases:
 
-```console
-$ make cctest GTEST_FILTER=EnvironmentTest.AtExitWithArgument
+```bash
+make cctest GTEST_FILTER=EnvironmentTest.AtExitWithArgument
 ```
 
 `cctest` can also be run directly which can be useful when debugging:
 
-```console
-$ out/Release/cctest --gtest_filter=EnvironmentTest.AtExit\*
+```bash
+out/Release/cctest --gtest_filter=EnvironmentTest.AtExit\*
 ```
 
 ### Node.js test fixture
@@ -456,7 +482,7 @@ will depend on what is being tested if this is required or not.
 To generate a test coverage report, see the
 [Test Coverage section of the Building guide][].
 
-Nightly coverage reports for the Node.js master branch are available at
+Nightly coverage reports for the Node.js `main` branch are available at
 <https://coverage.nodejs.org/>.
 
 [ASCII]: https://man7.org/linux/man-pages/man7/ascii.7.html

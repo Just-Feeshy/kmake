@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2007-2023 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright Nokia 2007-2019
  * Copyright Siemens AG 2015-2019
  *
@@ -90,7 +90,7 @@ ASN1_BIT_STRING *ossl_cmp_calc_protection(const OSSL_CMP_CTX *ctx,
             goto end;
 
         if ((prot = ASN1_BIT_STRING_new()) == NULL)
-            return NULL;
+            goto end;
         /* OpenSSL defaults all bit strings to be encoded as ASN.1 NamedBitList */
         prot->flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07);
         prot->flags |= ASN1_STRING_FLAG_BITS_LEFT;
@@ -129,6 +129,7 @@ ASN1_BIT_STRING *ossl_cmp_calc_protection(const OSSL_CMP_CTX *ctx,
     }
 }
 
+/* ctx is not const just because ctx->chain may get adapted */
 int ossl_cmp_msg_add_extraCerts(OSSL_CMP_CTX *ctx, OSSL_CMP_MSG *msg)
 {
     if (!ossl_assert(ctx != NULL && msg != NULL))
@@ -251,6 +252,7 @@ static int set_senderKID(const OSSL_CMP_CTX *ctx, OSSL_CMP_MSG *msg,
     return id == NULL || ossl_cmp_hdr_set1_senderKID(msg->header, id);
 }
 
+/* ctx is not const just because ctx->chain may get adapted */
 int ossl_cmp_msg_protect(OSSL_CMP_CTX *ctx, OSSL_CMP_MSG *msg)
 {
     if (!ossl_assert(ctx != NULL && msg != NULL))

@@ -66,7 +66,7 @@ For example, this is not a good idea:
 ```js
 // XXX WARNING! BAD IDEA!
 
-const d = require('domain').create();
+const d = require('node:domain').create();
 d.on('error', (er) => {
   // The error won't crash the process, but what it does is worse!
   // Though we've prevented abrupt process restarting, we are leaking
@@ -75,7 +75,7 @@ d.on('error', (er) => {
   console.log(`error, but oh well ${er.message}`);
 });
 d.run(() => {
-  require('http').createServer((req, res) => {
+  require('node:http').createServer((req, res) => {
     handleRequest(req, res);
   }).listen(PORT);
 });
@@ -88,7 +88,7 @@ appropriately, and handle errors with much greater safety.
 ```js
 // Much better!
 
-const cluster = require('cluster');
+const cluster = require('node:cluster');
 const PORT = +process.env.PORT || 1337;
 
 if (cluster.isPrimary) {
@@ -117,12 +117,12 @@ if (cluster.isPrimary) {
   //
   // This is where we put our bugs!
 
-  const domain = require('domain');
+  const domain = require('node:domain');
 
   // See the cluster documentation for more details about using
   // worker processes to serve requests. How it works, caveats, etc.
 
-  const server = require('http').createServer((req, res) => {
+  const server = require('node:http').createServer((req, res) => {
     const d = domain.create();
     d.on('error', (er) => {
       console.error(`error ${er.stack}`);
@@ -212,7 +212,7 @@ If domains are in use, then all **new** `EventEmitter` objects (including
 Stream objects, requests, responses, etc.) will be implicitly bound to
 the active domain at the time of their creation.
 
-Additionally, callbacks passed to lowlevel event loop requests (such as
+Additionally, callbacks passed to low-level event loop requests (such as
 to `fs.open()`, or other callback-taking methods) will automatically be
 bound to the active domain. If they throw, then the domain will catch
 the error.
@@ -246,8 +246,8 @@ That is possible via explicit binding.
 
 ```js
 // Create a top-level domain for the server
-const domain = require('domain');
-const http = require('http');
+const domain = require('node:domain');
+const http = require('node:http');
 const serverDomain = domain.create();
 
 serverDomain.run(() => {
@@ -409,15 +409,15 @@ specified emitter.
 * `...args` {any}
 
 Run the supplied function in the context of the domain, implicitly
-binding all event emitters, timers, and lowlevel requests that are
+binding all event emitters, timers, and low-level requests that are
 created in that context. Optionally, arguments can be passed to
 the function.
 
 This is the most basic way to use a domain.
 
 ```js
-const domain = require('domain');
-const fs = require('fs');
+const domain = require('node:domain');
+const fs = require('node:fs');
 const d = domain.create();
 d.on('error', (er) => {
   console.error('Caught error!', er);

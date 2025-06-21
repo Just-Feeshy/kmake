@@ -9,8 +9,8 @@
 
 #include <atomic>
 
-#include "include/cppgc/allocation.h"
 #include "include/cppgc/internal/gc-info.h"
+#include "include/cppgc/internal/member-storage.h"
 #include "include/cppgc/internal/name-trait.h"
 #include "src/base/atomic-utils.h"
 #include "src/base/bit-field.h"
@@ -86,7 +86,7 @@ class HeapObjectHeader {
 
   template <AccessMode = AccessMode::kNonAtomic>
   bool IsInConstruction() const;
-  inline void MarkAsFullyConstructed();
+  V8_EXPORT_PRIVATE void MarkAsFullyConstructed();
   // Use MarkObjectAsFullyConstructed() to mark an object as being constructed.
 
   template <AccessMode = AccessMode::kNonAtomic>
@@ -111,10 +111,16 @@ class HeapObjectHeader {
   inline HeapObjectHeader* GetNextUnfinalized(uintptr_t cage_base) const;
 #endif  // defined(CPPGC_CAGED_HEAP)
 
+  // Default version will retrieve `HeapObjectNameForUnnamedObject` as it is
+  // configured at runtime.
   V8_EXPORT_PRIVATE HeapObjectName GetName() const;
+  // Override for verifying and testing where we always want to pass the naming
+  // option explicitly.
+  V8_EXPORT_PRIVATE HeapObjectName
+      GetName(HeapObjectNameForUnnamedObject) const;
 
   template <AccessMode = AccessMode::kNonAtomic>
-  void Trace(Visitor*) const;
+  void TraceImpl(Visitor*) const;
 
  private:
   enum class EncodedHalf : uint8_t { kLow, kHigh };
@@ -125,18 +131,17 @@ class HeapObjectHeader {
   using GCInfoIndexField = UnusedField1::Next<GCInfoIndex, 14>;
   // Used in |encoded_low_|.
   using MarkBitField = v8::base::BitField16<bool, 0, 1>;
-  using SizeField = void;  // Use EncodeSize/DecodeSize instead.
+  using SizeField =
+      MarkBitField::Next<size_t, 15>;  // Use EncodeSize/DecodeSize instead.
 
   static constexpr size_t DecodeSize(uint16_t encoded) {
     // Essentially, gets optimized to << 1.
-    using SizeFieldImpl = MarkBitField::Next<size_t, 15>;
-    return SizeFieldImpl::decode(encoded) * kAllocationGranularity;
+    return SizeField::decode(encoded) * kAllocationGranularity;
   }
 
   static constexpr uint16_t EncodeSize(size_t size) {
     // Essentially, gets optimized to >> 1.
-    using SizeFieldImpl = MarkBitField::Next<size_t, 15>;
-    return SizeFieldImpl::encode(size / kAllocationGranularity);
+    return SizeField::encode(size / kAllocationGranularity);
   }
 
   V8_EXPORT_PRIVATE void CheckApiConstants();
@@ -148,7 +153,7 @@ class HeapObjectHeader {
             std::memory_order memory_order = std::memory_order_seq_cst>
   inline void StoreEncoded(uint16_t bits, uint16_t mask);
 
-#if defined(V8_TARGET_ARCH_64_BIT)
+#if defined(V8_HOST_ARCH_64_BIT)
   // If cage is enabled, to save on space required by sweeper metadata, we store
   // the list of to-be-finalized objects inlined in HeapObjectHeader.
 #if defined(CPPGC_CAGED_HEAP)
@@ -156,7 +161,7 @@ class HeapObjectHeader {
 #else   // !defined(CPPGC_CAGED_HEAP)
   uint32_t padding_ = 0;
 #endif  // !defined(CPPGC_CAGED_HEAP)
-#endif  // defined(V8_TARGET_ARCH_64_BIT)
+#endif  // defined(V8_HOST_ARCH_64_BIT)
   uint16_t encoded_high_;
   uint16_t encoded_low_;
 };
@@ -178,9 +183,9 @@ const HeapObjectHeader& HeapObjectHeader::FromObject(const void* object) {
 }
 
 HeapObjectHeader::HeapObjectHeader(size_t size, GCInfoIndex gc_info_index) {
-#if defined(V8_TARGET_ARCH_64_BIT) && !defined(CPPGC_CAGED_HEAP)
+#if defined(V8_HOST_ARCH_64_BIT) && !defined(CPPGC_CAGED_HEAP)
   USE(padding_);
-#endif  // defined(V8_TARGET_ARCH_64_BIT) && !defined(CPPGC_CAGED_HEAP)
+#endif  // defined(V8_HOST_ARCH_64_BIT) && !defined(CPPGC_CAGED_HEAP)
   DCHECK_LT(gc_info_index, GCInfoTable::kMaxIndex);
   DCHECK_EQ(0u, size & (sizeof(HeapObjectHeader) - 1));
   DCHECK_GE(kMaxSize, size);
@@ -207,7 +212,7 @@ Address HeapObjectHeader::ObjectStart() const {
 
 template <AccessMode mode>
 Address HeapObjectHeader::ObjectEnd() const {
-  DCHECK(!IsLargeObject());
+  DCHECK(!IsLargeObject<mode>());
   return reinterpret_cast<Address>(const_cast<HeapObjectHeader*>(this)) +
          AllocatedSize<mode>();
 }
@@ -230,8 +235,16 @@ size_t HeapObjectHeader::AllocatedSize() const {
 }
 
 void HeapObjectHeader::SetAllocatedSize(size_t size) {
+#if !defined(CPPGC_YOUNG_GENERATION)
+  // With sticky bits, marked objects correspond to old objects.
+  // TODO(bikineev:1029379): Consider disallowing old/marked objects to be
+  // resized.
   DCHECK(!IsMarked());
-  encoded_low_ = EncodeSize(size);
+#endif
+  // The object may be marked (i.e. old, in case young generation is enabled).
+  // Make sure to not overwrite the mark bit.
+  encoded_low_ &= ~SizeField::encode(SizeField::kMax);
+  encoded_low_ |= EncodeSize(size);
 }
 
 template <AccessMode mode>
@@ -251,11 +264,6 @@ bool HeapObjectHeader::IsInConstruction() const {
   const uint16_t encoded =
       LoadEncoded<mode, EncodedHalf::kHigh, std::memory_order_acquire>();
   return !FullyConstructedField::decode(encoded);
-}
-
-void HeapObjectHeader::MarkAsFullyConstructed() {
-  MakeGarbageCollectedTraitInternal::MarkObjectAsFullyConstructed(
-      ObjectStart());
 }
 
 template <AccessMode mode>
@@ -305,22 +313,34 @@ bool HeapObjectHeader::IsFinalizable() const {
 
 #if defined(CPPGC_CAGED_HEAP)
 void HeapObjectHeader::SetNextUnfinalized(HeapObjectHeader* next) {
+#if defined(CPPGC_POINTER_COMPRESSION)
+  next_unfinalized_ = CompressedPointer::Compress(next);
+#else   // !defined(CPPGC_POINTER_COMPRESSION)
   next_unfinalized_ = CagedHeap::OffsetFromAddress<uint32_t>(next);
+#endif  // !defined(CPPGC_POINTER_COMPRESSION)
 }
 
 HeapObjectHeader* HeapObjectHeader::GetNextUnfinalized(
-    uintptr_t cage_base) const {
-  DCHECK(cage_base);
-  DCHECK_EQ(0u,
-            CagedHeap::OffsetFromAddress(reinterpret_cast<void*>(cage_base)));
+    uintptr_t cage_base_or_mask) const {
+  DCHECK(cage_base_or_mask);
+#if defined(CPPGC_POINTER_COMPRESSION)
+  DCHECK_EQ(
+      api_constants::kCagedHeapReservationAlignment - 1,
+      CagedHeap::OffsetFromAddress(reinterpret_cast<void*>(cage_base_or_mask)));
+  return reinterpret_cast<HeapObjectHeader*>(
+      CompressedPointer::Decompress(next_unfinalized_, cage_base_or_mask));
+#else   // !defined(CPPGC_POINTER_COMPRESSION)
+  DCHECK_EQ(0, CagedHeap::OffsetFromAddress(
+                   reinterpret_cast<void*>(cage_base_or_mask)));
   return next_unfinalized_ ? reinterpret_cast<HeapObjectHeader*>(
-                                 cage_base + next_unfinalized_)
+                                 cage_base_or_mask + next_unfinalized_)
                            : nullptr;
+#endif  // !defined(CPPGC_POINTER_COMPRESSION)
 }
 #endif  // defined(CPPGC_CAGED_HEAP)
 
 template <AccessMode mode>
-void HeapObjectHeader::Trace(Visitor* visitor) const {
+void HeapObjectHeader::TraceImpl(Visitor* visitor) const {
   const GCInfo& gc_info =
       GlobalGCInfoTable::GCInfoFromIndex(GetGCInfoIndex<mode>());
   return gc_info.trace(visitor, ObjectStart());

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -45,29 +45,9 @@ int ssl3_do_write(SSL *s, int type)
     int ret;
     size_t written = 0;
 
-#ifndef OPENSSL_NO_QUIC
-    if (SSL_IS_QUIC(s)) {
-        if (type == SSL3_RT_HANDSHAKE) {
-            ret = s->quic_method->add_handshake_data(s, s->quic_write_level,
-                                                     (const uint8_t*)&s->init_buf->data[s->init_off],
-                                                     s->init_num);
-            if (!ret) {
-                ret = -1;
-                /* QUIC can't sent anything out sice the above failed */
-                ERR_raise(ERR_LIB_SSL, ERR_R_INTERNAL_ERROR);
-            } else {
-                written = s->init_num;
-            }
-        } else {
-            /* QUIC doesn't use ChangeCipherSpec */
-            ret = -1;
-            ERR_raise(ERR_LIB_SSL, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-        }
-    } else
-#endif
-        ret = ssl3_write_bytes(s, type, &s->init_buf->data[s->init_off],
-                               s->init_num, &written);
-    if (ret < 0)
+    ret = ssl3_write_bytes(s, type, &s->init_buf->data[s->init_off],
+                           s->init_num, &written);
+    if (ret <= 0)
         return -1;
     if (type == SSL3_RT_HANDSHAKE)
         /*
@@ -195,18 +175,19 @@ int tls_setup_handshake(SSL *s)
         }
         if (SSL_IS_FIRST_HANDSHAKE(s)) {
             /* N.B. s->session_ctx == s->ctx here */
-            tsan_counter(&s->session_ctx->stats.sess_accept);
+            ssl_tsan_counter(s->session_ctx, &s->session_ctx->stats.sess_accept);
         } else {
             /* N.B. s->ctx may not equal s->session_ctx */
-            tsan_counter(&s->ctx->stats.sess_accept_renegotiate);
+            ssl_tsan_counter(s->ctx, &s->ctx->stats.sess_accept_renegotiate);
 
             s->s3.tmp.cert_request = 0;
         }
     } else {
         if (SSL_IS_FIRST_HANDSHAKE(s))
-            tsan_counter(&s->session_ctx->stats.sess_connect);
+            ssl_tsan_counter(s->session_ctx, &s->session_ctx->stats.sess_connect);
         else
-            tsan_counter(&s->session_ctx->stats.sess_connect_renegotiate);
+            ssl_tsan_counter(s->session_ctx,
+                         &s->session_ctx->stats.sess_connect_renegotiate);
 
         /* mark client_random uninitialized */
         memset(s->s3.client_random, 0, sizeof(s->s3.client_random));
@@ -461,7 +442,8 @@ MSG_PROCESS_RETURN tls_process_cert_verify(SSL *s, PACKET *pkt)
             goto err;
         }
     } else if (!tls1_set_peer_legacy_sigalg(s, pkey)) {
-            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR,
+                     SSL_R_LEGACY_SIGALG_DISALLOWED_OR_UNSUPPORTED);
             goto err;
     }
 
@@ -495,6 +477,10 @@ MSG_PROCESS_RETURN tls_process_cert_verify(SSL *s, PACKET *pkt)
     }
 
     if (!PACKET_get_bytes(pkt, &data, len)) {
+        SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_LENGTH_MISMATCH);
+        goto err;
+    }
+    if (PACKET_remaining(pkt) != 0) {
         SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_LENGTH_MISMATCH);
         goto err;
     }
@@ -659,13 +645,6 @@ int tls_construct_finished(SSL *s, WPACKET *pkt)
 
 int tls_construct_key_update(SSL *s, WPACKET *pkt)
 {
-#ifndef OPENSSL_NO_QUIC
-    if (SSL_is_quic(s)) {
-        /* TLS KeyUpdate is not used for QUIC, so this is an error. */
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
-        return 0;
-    }
-#endif
     if (!WPACKET_put_bytes_u8(pkt, s->key_update)) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         return 0;
@@ -687,13 +666,6 @@ MSG_PROCESS_RETURN tls_process_key_update(SSL *s, PACKET *pkt)
         SSLfatal(s, SSL_AD_UNEXPECTED_MESSAGE, SSL_R_NOT_ON_RECORD_BOUNDARY);
         return MSG_PROCESS_ERROR;
     }
-
-#ifndef OPENSSL_NO_QUIC
-    if (SSL_is_quic(s)) {
-        SSLfatal(s, SSL_AD_UNEXPECTED_MESSAGE, SSL_R_UNEXPECTED_MESSAGE);
-        return MSG_PROCESS_ERROR;
-    }
-#endif
 
     if (!PACKET_get_1(pkt, &updatetype)
             || PACKET_remaining(pkt) != 0) {
@@ -1130,7 +1102,7 @@ WORK_STATE tls_finish_handshake(SSL *s, ossl_unused WORK_STATE wst,
                 ssl_update_cache(s, SSL_SESS_CACHE_SERVER);
 
             /* N.B. s->ctx may not equal s->session_ctx */
-            tsan_counter(&s->ctx->stats.sess_accept_good);
+            ssl_tsan_counter(s->ctx, &s->ctx->stats.sess_accept_good);
             s->handshake_func = ossl_statem_accept;
         } else {
             if (SSL_IS_TLS13(s)) {
@@ -1149,10 +1121,12 @@ WORK_STATE tls_finish_handshake(SSL *s, ossl_unused WORK_STATE wst,
                 ssl_update_cache(s, SSL_SESS_CACHE_CLIENT);
             }
             if (s->hit)
-                tsan_counter(&s->session_ctx->stats.sess_hit);
+                ssl_tsan_counter(s->session_ctx,
+                                 &s->session_ctx->stats.sess_hit);
 
             s->handshake_func = ossl_statem_connect;
-            tsan_counter(&s->session_ctx->stats.sess_connect_good);
+            ssl_tsan_counter(s->session_ctx,
+                             &s->session_ctx->stats.sess_connect_good);
         }
 
         if (SSL_IS_DTLS(s)) {

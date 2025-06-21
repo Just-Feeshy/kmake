@@ -13,7 +13,7 @@
   ],
   # build options specific to OS
   'conditions': [
-    [ 'OS=="aix"', {
+    [ 'OS in ("aix", "os400")', {
       # AIX is missing /usr/include/endian.h
       'defines': [
         '__LITTLE_ENDIAN=1234',
@@ -26,7 +26,7 @@
     }, 'OS=="win"', {
       'defines': [
         ## default of Win. See INSTALL in openssl repo.
-        'OPENSSLDIR="C:\\\Program\ Files\\\Common\ Files\\\SSL"',
+        'OPENSSLDIR="C:\\\\Program\\ Files\\\\Common\\ Files\\\\SSL"',
         'ENGINESDIR="NUL"',
         'OPENSSL_SYS_WIN32', 'WIN32_LEAN_AND_MEAN', 'L_ENDIAN',
         '_CRT_SECURE_NO_DEPRECATE', 'UNICODE', '_UNICODE',
@@ -49,6 +49,7 @@
         'WARNING_CFLAGS': ['-Wno-missing-field-initializers']
       },
       'defines': [
+        'OPENSSLDIR="/System/Library/OpenSSL/"',
         'ENGINESDIR="/dev/null"',
       ],
     }, 'OS=="solaris"', {
@@ -61,11 +62,12 @@
       # linux and others
       'cflags': ['-Wno-missing-field-initializers',],
       'defines': [
+        'OPENSSLDIR="/etc/ssl"',
         'ENGINESDIR="/dev/null"',
         'TERMIOS',
       ],
       'conditions': [
-        [ 'llvm_version=="0.0"', {
+        [ 'clang==0', {
           'cflags': ['-Wno-old-style-declaration',],
         }],
       ],

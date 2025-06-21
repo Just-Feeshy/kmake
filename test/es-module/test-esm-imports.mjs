@@ -9,19 +9,26 @@ const { requireImport, importImport } = importer;
 [requireImport, importImport].forEach((loadFixture) => {
   const isRequire = loadFixture === requireImport;
 
+  const maybeWrapped = isRequire ? (exports) => exports :
+    (exports) => ({ ...exports, 'module.exports': exports.default });
+
   const internalImports = new Map([
     // Base case
-    ['#test', { default: 'test' }],
+    ['#test', maybeWrapped({ default: 'test' })],
     // import / require conditions
-    ['#branch', { default: isRequire ? 'requirebranch' : 'importbranch' }],
+    ['#branch', maybeWrapped({ default: isRequire ? 'requirebranch' : 'importbranch' })],
     // Subpath imports
-    ['#subpath/x.js', { default: 'xsubpath' }],
+    ['#subpath/x.js', maybeWrapped({ default: 'xsubpath' })],
     // External imports
-    ['#external', { default: 'asdf' }],
+    ['#external', maybeWrapped({ default: 'asdf' })],
     // External subpath imports
-    ['#external/subpath/asdf.js', { default: 'asdf' }],
+    ['#external/subpath/asdf.js', maybeWrapped({ default: 'asdf' })],
     // Trailing pattern imports
-    ['#subpath/asdf.asdf', { default: 'test' }],
+    ['#subpath/asdf.asdf', maybeWrapped({ default: 'test' })],
+    // Leading slash
+    ['#subpath//asdf.asdf', maybeWrapped({ default: 'test' })],
+    // Double slash
+    ['#subpath/as//df.asdf', maybeWrapped({ default: 'test' })],
   ]);
 
   for (const [validSpecifier, expected] of internalImports) {
@@ -51,7 +58,7 @@ const { requireImport, importImport } = importer;
 
   const invalidImportSpecifiers = new Map([
     // Backtracking below the package base
-    ['#subpath/sub/../../../belowbase', 'request is not a valid subpath'],
+    ['#subpath/sub/../../../belowbase', 'request is not a valid match in pattern'],
     // Percent-encoded slash errors
     ['#external/subpath/x%2Fy', 'must not include encoded "/" or "\\"'],
     ['#external/subpath/x%5Cy', 'must not include encoded "/" or "\\"'],
@@ -79,10 +86,14 @@ const { requireImport, importImport } = importer;
     '#missing',
     // Explicit null import
     '#null',
+    '#subpath/null',
     // No condition match import
     '#nullcondition',
     // Null subpath shadowing
     '#subpath/nullshadow/x',
+    // Null pattern
+    '#subpath/internal/test',
+    '#subpath/internal//test',
   ]);
 
   for (const specifier of undefinedImports) {
@@ -94,10 +105,20 @@ const { requireImport, importImport } = importer;
   }
 
   // Handle not found for the defined imports target not existing
-  loadFixture('#notfound').catch(mustCall((err) => {
-    strictEqual(err.code,
-                isRequire ? 'MODULE_NOT_FOUND' : 'ERR_MODULE_NOT_FOUND');
-  }));
+  const nonDefinedImports = new Set([
+    '#notfound',
+    '#subpath//null',
+    '#subpath/////null',
+    '#subpath//internal/test',
+    '#subpath//internal//test',
+    '#subpath/////internal/////test',
+  ]);
+  for (const specifier of nonDefinedImports) {
+    loadFixture(specifier).catch(mustCall((err) => {
+      strictEqual(err.code,
+                  isRequire ? 'MODULE_NOT_FOUND' : 'ERR_MODULE_NOT_FOUND');
+    }));
+  }
 });
 
 // CJS resolver must still support #package packages in node_modules
@@ -106,7 +127,7 @@ requireFixture('#cjs').then(mustCall((actual) => {
 }));
 
 function assertStartsWith(actual, expected) {
-  const start = actual.toString().substr(0, expected.length);
+  const start = actual.toString().slice(0, expected.length);
   strictEqual(start, expected);
 }
 

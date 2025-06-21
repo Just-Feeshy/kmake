@@ -8,26 +8,31 @@ _Addons_ are dynamically-linked shared objects written in C++. The
 [`require()`][require] function can load addons as ordinary Node.js modules.
 Addons provide an interface between JavaScript and C/C++ libraries.
 
-There are three options for implementing addons: Node-API, nan, or direct
-use of internal V8, libuv and Node.js libraries. Unless there is a need for
-direct access to functionality which is not exposed by Node-API, use Node-API.
+There are three options for implementing addons:
+
+* Node-API
+* `nan` ([Native Abstractions for Node.js][])
+* direct use of internal V8, libuv, and Node.js libraries
+
+Unless there is a need for direct access to functionality which is not\
+exposed by Node-API, use Node-API.
 Refer to [C/C++ addons with Node-API](n-api.md) for more information on
 Node-API.
 
-When not using Node-API, implementing addons is complicated,
-involving knowledge of several components and APIs:
+When not using Node-API, implementing addons becomes more complex, requiring\
+knowledge of multiple components and APIs:
 
 * [V8][]: the C++ library Node.js uses to provide the
-  JavaScript implementation. V8 provides the mechanisms for creating objects,
-  calling functions, etc. V8's API is documented mostly in the
+  JavaScript implementation. It provides the mechanisms for creating objects,
+  calling functions, etc. The V8's API is documented mostly in the
   `v8.h` header file (`deps/v8/include/v8.h` in the Node.js source
-  tree), which is also available [online][v8-docs].
+  tree), and is also available [online][v8-docs].
 
 * [libuv][]: The C library that implements the Node.js event loop, its worker
   threads and all of the asynchronous behaviors of the platform. It also
   serves as a cross-platform abstraction library, giving easy, POSIX-like
   access across all major operating systems to many common system tasks, such
-  as interacting with the filesystem, sockets, timers, and system events. libuv
+  as interacting with the file system, sockets, timers, and system events. libuv
   also provides a threading abstraction similar to POSIX threads for
   more sophisticated asynchronous addons that need to move beyond the
   standard event loop. Addon authors should
@@ -35,12 +40,12 @@ involving knowledge of several components and APIs:
   offloading work via libuv to non-blocking system operations, worker threads,
   or a custom use of libuv threads.
 
-* Internal Node.js libraries. Node.js itself exports C++ APIs that addons can
+* Internal Node.js libraries: Node.js itself exports C++ APIs that addons can
   use, the most important of which is the `node::ObjectWrap` class.
 
-* Node.js includes other statically linked libraries including OpenSSL. These
+* Other statically linked libraries (including OpenSSL): These
   other libraries are located in the `deps/` directory in the Node.js source
-  tree. Only the libuv, OpenSSL, V8 and zlib symbols are purposefully
+  tree. Only the libuv, OpenSSL, V8, and zlib symbols are purposefully
   re-exported by Node.js and may be used to various extents by addons. See
   [Linking to libraries included with Node.js][] for additional information.
 
@@ -67,6 +72,7 @@ namespace demo {
 using v8::FunctionCallbackInfo;
 using v8::Isolate;
 using v8::Local;
+using v8::NewStringType;
 using v8::Object;
 using v8::String;
 using v8::Value;
@@ -74,7 +80,7 @@ using v8::Value;
 void Method(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
   args.GetReturnValue().Set(String::NewFromUtf8(
-      isolate, "world").ToLocalChecked());
+      isolate, "world", NewStringType::kNormal).ToLocalChecked());
 }
 
 void Initialize(Local<Object> exports) {
@@ -106,6 +112,9 @@ and the addon module name is `addon`.
 When building addons with `node-gyp`, using the macro `NODE_GYP_MODULE_NAME` as
 the first parameter of `NODE_MODULE()` will ensure that the name of the final
 binary will be passed to `NODE_MODULE()`.
+
+Addons defined with `NODE_MODULE()` can not be loaded in multiple contexts or
+multiple threads at the same time.
 
 ### Context-aware addons
 
@@ -145,8 +154,8 @@ invocation of `NODE_MODULE_INIT()`:
 * `Local<Value> module`, and
 * `Local<Context> context`
 
-The choice to build a context-aware addon carries with it the responsibility of
-carefully managing global static data. Since the addon may be loaded multiple
+Building a context-aware addon requires careful management of global static data
+to ensure stability and correctness. Since the addon may be loaded multiple
 times, potentially even from different threads, any global static data stored
 in the addon must be properly protected, and must not contain any persistent
 references to JavaScript objects. The reason for this is that JavaScript
@@ -252,7 +261,7 @@ such as a main thread and a Worker thread, an add-on needs to either:
 * Be declared as context-aware using `NODE_MODULE_INIT()` as described above
 
 In order to support [`Worker`][] threads, addons need to clean up any resources
-they may have allocated when such a thread exists. This can be achieved through
+they may have allocated when such a thread exits. This can be achieved through
 the usage of the `AddEnvironmentCleanupHook()` function:
 
 ```cpp
@@ -393,7 +402,7 @@ try {
 
 ### Linking to libraries included with Node.js
 
-Node.js uses statically linked libraries such as V8, libuv and OpenSSL. All
+Node.js uses statically linked libraries such as V8, libuv, and OpenSSL. All
 addons are required to link to V8 and may link to any of the other dependencies
 as well. Typically, this is as simple as including the appropriate
 `#include <...>` statements (e.g. `#include <v8.h>`) and `node-gyp` will locate
@@ -529,8 +538,8 @@ filename to the `sources` array:
 Once the `binding.gyp` file is ready, the example addons can be configured and
 built using `node-gyp`:
 
-```console
-$ node-gyp configure build
+```bash
+node-gyp configure build
 ```
 
 ### Function arguments
@@ -842,8 +851,8 @@ class MyObject : public node::ObjectWrap {
 ```
 
 In `myobject.cc`, implement the various methods that are to be exposed.
-Below, the method `plusOne()` is exposed by adding it to the constructor's
-prototype:
+In the following code, the method `plusOne()` is exposed by adding it to the
+constructor's prototype:
 
 ```cpp
 // myobject.cc
@@ -909,7 +918,8 @@ void MyObject::New(const FunctionCallbackInfo<Value>& args) {
     const int argc = 1;
     Local<Value> argv[argc] = { args[0] };
     Local<Function> cons =
-        args.Data().As<Object>()->GetInternalField(0).As<Function>();
+        args.Data().As<Object>()->GetInternalField(0)
+            .As<Value>().As<Function>();
     Local<Object> result =
         cons->NewInstance(context, argc, argv).ToLocalChecked();
     args.GetReturnValue().Set(result);
@@ -919,7 +929,7 @@ void MyObject::New(const FunctionCallbackInfo<Value>& args) {
 void MyObject::PlusOne(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
 
-  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.Holder());
+  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.This());
   obj->value_ += 1;
 
   args.GetReturnValue().Set(Number::New(isolate, obj->value_));
@@ -1134,7 +1144,7 @@ void MyObject::NewInstance(const FunctionCallbackInfo<Value>& args) {
 void MyObject::PlusOne(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
 
-  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.Holder());
+  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.This());
   obj->value_ += 1;
 
   args.GetReturnValue().Set(Number::New(isolate, obj->value_));
@@ -1269,7 +1279,7 @@ class MyObject : public node::ObjectWrap {
 #endif
 ```
 
-The implementation of `myobject.cc` is similar to before:
+The implementation of `myobject.cc` remains similar to the previous version:
 
 ```cpp
 // myobject.cc
@@ -1367,7 +1377,7 @@ console.log(result);
 ```
 
 [Electron]: https://electronjs.org/
-[Embedder's Guide]: https://github.com/v8/v8/wiki/Embedder's%20Guide
+[Embedder's Guide]: https://v8.dev/docs/embed
 [Linking to libraries included with Node.js]: #linking-to-libraries-included-with-nodejs
 [Native Abstractions for Node.js]: https://github.com/nodejs/nan
 [V8]: https://v8.dev/

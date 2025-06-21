@@ -22,7 +22,10 @@
 // Flags: --expose-internals
 'use strict';
 const common = require('../common');
-common.skipIfDumbTerminal();
+
+if (process.env.TERM === 'dumb') {
+  common.skip('skipping - dumb terminal');
+}
 
 const assert = require('assert');
 const readline = require('readline');
@@ -44,7 +47,7 @@ class FakeInput extends EventEmitter {
 function isWarned(emitter) {
   for (const name in emitter) {
     const listeners = emitter[name];
-    if (listeners.warned) return true;
+    if (listeners?.warned) return true;
   }
   return false;
 }
@@ -69,6 +72,19 @@ function assertCursorRowsAndCols(rli, rows, cols) {
   const input = new FakeInput();
   const rl = readline.Interface({ input });
   assert(rl instanceof readline.Interface);
+}
+
+{
+  const fi = new FakeInput();
+  const rli = new readline.Interface(
+    fi,
+    fi,
+    common.mustCall((line) => [[], line]),
+    true,
+  );
+  assert(rli instanceof readline.Interface);
+  fi.emit('data', 'a\t');
+  rli.close();
 }
 
 [
@@ -113,7 +129,7 @@ function assertCursorRowsAndCols(rli, rows, cols) {
   });
 
   // Constructor throws if historySize is not a positive number
-  ['not a number', -1, NaN, {}, true, Symbol(), null].forEach((historySize) => {
+  [-1, NaN].forEach((historySize) => {
     assert.throws(() => {
       readline.createInterface({
         input,
@@ -121,7 +137,20 @@ function assertCursorRowsAndCols(rli, rows, cols) {
       });
     }, {
       name: 'RangeError',
-      code: 'ERR_INVALID_ARG_VALUE'
+      code: 'ERR_OUT_OF_RANGE',
+    });
+  });
+
+  // Constructor throws if type of historySize is not a number
+  ['not a number', {}, true, Symbol(), null].forEach((historySize) => {
+    assert.throws(() => {
+      readline.createInterface({
+        input,
+        historySize,
+      });
+    }, {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_TYPE',
     });
   });
 
@@ -131,11 +160,7 @@ function assertCursorRowsAndCols(rli, rows, cols) {
       input,
       tabSize: 0
     }),
-    {
-      message: 'The value of "tabSize" is out of range. ' +
-                'It must be >= 1 && < 4294967296. Received 0',
-      code: 'ERR_OUT_OF_RANGE'
-    }
+    { code: 'ERR_OUT_OF_RANGE' }
   );
 
   assert.throws(
@@ -912,6 +937,24 @@ for (let i = 0; i < 12; i++) {
     fi.emit('data', 'asdf\n');
   }
 
+  // Ensure that options.signal.removeEventListener was called
+  {
+    const ac = new AbortController();
+    const signal = ac.signal;
+    const [rli] = getInterface({ terminal });
+    signal.removeEventListener = common.mustCall(
+      (event, onAbortFn) => {
+        assert.strictEqual(event, 'abort');
+        assert.strictEqual(onAbortFn.name, 'onAbort');
+      });
+
+    rli.question('hello?', { signal }, common.mustCall());
+
+    rli.write('bar\n');
+    ac.abort();
+    rli.close();
+  }
+
   // Sending a blank line
   {
     const [rli, fi] = getInterface({ terminal });
@@ -1010,14 +1053,34 @@ for (let i = 0; i < 12; i++) {
     rli.close();
   }
 
+  // Calling the question callback with abort signal
+  {
+    const [rli] = getInterface({ terminal });
+    const { signal } = new AbortController();
+    rli.question('foo?', { signal }, common.mustCall((answer) => {
+      assert.strictEqual(answer, 'bar');
+    }));
+    rli.write('bar\n');
+    rli.close();
+  }
+
+  // Calling only the first question callback
+  {
+    const [rli] = getInterface({ terminal });
+    rli.question('foo?', common.mustCall((answer) => {
+      assert.strictEqual(answer, 'bar');
+    }));
+    rli.question('hello?', common.mustNotCall());
+    rli.write('bar\n');
+  }
+
   // Calling the question multiple times
   {
     const [rli] = getInterface({ terminal });
     rli.question('foo?', common.mustCall((answer) => {
       assert.strictEqual(answer, 'baz');
     }));
-    rli.question('bar?', common.mustNotCall(() => {
-    }));
+    rli.question('bar?', common.mustNotCall());
     rli.write('baz\n');
     rli.close();
   }
@@ -1027,6 +1090,19 @@ for (let i = 0; i < 12; i++) {
     const [rli] = getInterface({ terminal });
     const question = util.promisify(rli.question).bind(rli);
     question('foo?')
+    .then(common.mustCall((answer) => {
+      assert.strictEqual(answer, 'bar');
+    }));
+    rli.write('bar\n');
+    rli.close();
+  }
+
+  // Calling the promisified question with abort signal
+  {
+    const [rli] = getInterface({ terminal });
+    const question = util.promisify(rli.question).bind(rli);
+    const { signal } = new AbortController();
+    question('foo?', { signal })
     .then(common.mustCall((answer) => {
       assert.strictEqual(answer, 'bar');
     }));
@@ -1090,6 +1166,81 @@ for (let i = 0; i < 12; i++) {
       assert.strictEqual(error.name, 'AbortError');
     }));
     rli.close();
+  }
+
+  // Call question after close
+  {
+    const [rli, fi] = getInterface({ terminal });
+    rli.question('What\'s your name?', common.mustCall((name) => {
+      assert.strictEqual(name, 'Node.js');
+      rli.close();
+      assert.throws(() => {
+        rli.question('How are you?', common.mustNotCall());
+      }, {
+        name: 'Error',
+        code: 'ERR_USE_AFTER_CLOSE'
+      });
+      assert.notStrictEqual(rli.getPrompt(), 'How are you?');
+    }));
+    fi.emit('data', 'Node.js\n');
+  }
+
+  // Call promisified question after close
+  {
+    const [rli, fi] = getInterface({ terminal });
+    const question = util.promisify(rli.question).bind(rli);
+    question('What\'s your name?').then(common.mustCall((name) => {
+      assert.strictEqual(name, 'Node.js');
+      rli.close();
+      question('How are you?')
+        .then(common.mustNotCall(), common.expectsError({
+          code: 'ERR_USE_AFTER_CLOSE',
+          name: 'Error'
+        }));
+      assert.notStrictEqual(rli.getPrompt(), 'How are you?');
+    }));
+    fi.emit('data', 'Node.js\n');
+  }
+
+  // Call write after close
+  {
+    const [rli, fi] = getInterface({ terminal });
+    rli.question('What\'s your name?', common.mustCall((name) => {
+      assert.strictEqual(name, 'Node.js');
+      rli.close();
+      assert.throws(() => {
+        rli.write('I said Node.js');
+      }, {
+        name: 'Error',
+        code: 'ERR_USE_AFTER_CLOSE'
+      });
+    }));
+    fi.emit('data', 'Node.js\n');
+  }
+
+  // Call pause/resume after close
+  {
+    const [rli, fi] = getInterface({ terminal });
+    rli.question('What\'s your name?', common.mustCall((name) => {
+      assert.strictEqual(name, 'Node.js');
+      rli.close();
+      // No 'resume' nor 'pause' event should be emitted after close
+      rli.on('resume', common.mustNotCall());
+      rli.on('pause', common.mustNotCall());
+      assert.throws(() => {
+        rli.pause();
+      }, {
+        name: 'Error',
+        code: 'ERR_USE_AFTER_CLOSE'
+      });
+      assert.throws(() => {
+        rli.resume();
+      }, {
+        name: 'Error',
+        code: 'ERR_USE_AFTER_CLOSE'
+      });
+    }));
+    fi.emit('data', 'Node.js\n');
   }
 
   // Can create a new readline Interface with a null output argument
@@ -1231,6 +1382,26 @@ for (let i = 0; i < 12; i++) {
       assert.strictEqual(callCount, 1);
       rli.close();
     }), delay);
+  }
+
+  // Write correctly if paused
+  {
+    const [rli] = getInterface({ terminal });
+    rli.on('line', common.mustCall((line) => {
+      assert.strictEqual(line, 'bar');
+    }));
+    rli.pause();
+    rli.write('bar\n');
+    assert.strictEqual(rli.paused, false);
+    rli.close();
+  }
+
+  // Write undefined
+  {
+    const [rli] = getInterface({ terminal });
+    rli.on('line', common.mustNotCall());
+    rli.write();
+    rli.close();
   }
 });
 

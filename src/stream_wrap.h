@@ -52,6 +52,7 @@ class LibuvStreamWrap : public HandleWrap, public StreamBase {
   // Resource implementation
   int DoShutdown(ShutdownWrap* req_wrap) override;
   int DoTryWrite(uv_buf_t** bufs, size_t* count) override;
+  inline bool HasDoTryWrite() const override { return true; }
   int DoWrite(WriteWrap* w,
               uv_buf_t* bufs,
               size_t count,
@@ -105,9 +106,7 @@ class LibuvStreamWrap : public HandleWrap, public StreamBase {
 
   // Callbacks for libuv
   void OnUvAlloc(size_t suggested_size, uv_buf_t* buf);
-  // TODO(RaisinTen): Update the return type to a Maybe, so that we can indicate
-  // if there is a pending exception/termination.
-  void OnUvRead(ssize_t nread, const uv_buf_t* buf);
+  v8::Maybe<void> OnUvRead(ssize_t nread, const uv_buf_t* buf);
 
   static void AfterUvWrite(uv_write_t* req, int status);
   static void AfterUvShutdown(uv_shutdown_t* req, int status);
