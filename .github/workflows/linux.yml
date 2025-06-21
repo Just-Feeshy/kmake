@@ -101,7 +101,7 @@ jobs:
 
     - name: Disable QEMU emulation
       run: |
-        apt-get install --no-install-recommends -y binfmt-support
+        sudo apt-get install --no-install-recommends -y binfmt-support
         sudo update-binfmts --disable qemu-arm
 
     - name: Build in Alpine chroot
