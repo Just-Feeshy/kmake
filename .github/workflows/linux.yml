@@ -182,6 +182,8 @@ jobs:
         CXX: clang++
         LD: ld.lld
         AR: llvm-ar
+        CFLAGS:   "-U__ILP32__"
+        CXXFLAGS: "-U__ILP32__"
       run: |
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang
