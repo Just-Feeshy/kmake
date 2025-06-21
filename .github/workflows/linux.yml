@@ -33,7 +33,6 @@ jobs:
           clang
 
     - name: Build in Alpine chroot
-      env:
       run: |
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use-clang
