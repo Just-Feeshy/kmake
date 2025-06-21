@@ -33,7 +33,7 @@ jobs:
           clang
 
     - name: Build in Alpine chroot
-       env:
+      env:
         CC: clang
         CXX: clang++
         LD: ld.lld
