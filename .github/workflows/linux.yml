@@ -151,14 +151,15 @@ jobs:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
 
   build-armv7l:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v2
 
     - name: Setup latest Alpine Linux
       uses: jirutka/setup-alpine@v1
       with:
-        arch: x86
+        arch: armv7
+        apk-tools-url: https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic/v2.14.7/aarch64/apk.static#!sha256!27a975638ddc95a411c9f17c63383e335da9edf6bb7de2281d950c291a11f878
         packages: >
           build-base
           python3
@@ -170,35 +171,20 @@ jobs:
           clang
           llvm20
 
-    - name: Download and extract musl
-      working-directory: /home/runner/work
+    - name: Disable QEMU emulation
       run: |
-        wget http://kode.tech/armv7l-linux-musleabihf-cross.tgz
-        tar --extract --preserve-permissions --file armv7l-linux-musleabihf-cross.tgz
+        sudo apt-get install --no-install-recommends -y binfmt-support
+        sudo update-binfmts --disable qemu-arm
 
     - name: Build in Alpine chroot
       env:
-        SYSROOT: /home/runner/work/armv7l-linux-musleabihf-cross/armv7l-linux-musleabihf
-        TOOLCHAIN: /home/runner/work/armv7l-linux-musleabihf-cross
-        AR:  armv7l-linux-musleabihf-ar
-        NM:  armv7l-linux-musleabihf-nm
+        CC: clang
+        CXX: clang++
+        LD: ld.lld
+        AR: llvm-ar
       run: |
-        export PATH="$PATH:$TOOLCHAIN/bin"
-        export CC="clang --target=armv7l-linux-musleabihf           \
-                      --sysroot=$SYSROOT                        \
-                      --gcc-toolchain=$TOOLCHAIN"
-        export CXX="$CC -stdlib=libc++"
-        export LD="ld.lld --sysroot=$SYSROOT -static"
-        export CFLAGS="--target=armv7l-linux-musleabihf --sysroot=$SYSROOT"
-        export CXXFLAGS="$CFLAGS"
-        export LDFLAGS="--target=armv7l-linux-musleabihf --sysroot=$SYSROOT -static -fuse-ld=lld"
-        
-        export CC_host=clang
-        export CXX_host=clang++
-
         cd /home/runner/work/kmake/kmake
-        mkdir install
-        ./configure --prefix=install --dest-cpu=arm --cross-compiling --dest-os=linux --openssl-no-asm --without-intl --fully-static --use_clang
+        ./configure --openssl-no-asm --without-intl --fully-static --use_clang
         make -j$(nproc)
       shell: alpine.sh --root {0}
 
