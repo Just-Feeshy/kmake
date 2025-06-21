@@ -23,9 +23,17 @@ jobs:
       with:
         python-version: '3.13.5'
     - name: Configure
-      run: ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling
-    - name: Compile
-      run: make -j$(sysctl -n hw.logicalcpu)
+      env:
+        SDKROOT: $(xcrun --sdk macosx --show-sdk-path)
+        DEPLOY: 10.13
+        CC:  "clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
+        CXX: "clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
+        LD:  "ld.lld -arch x86_64 -platform_version macos $DEPLOY 13.0"
+        AR: llvm-ar
+        NM: llvm-nm
+      run: |
+        ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling
+        make -j$(sysctl -n hw.logicalcpu)
     - name: Get KoreTools_macos
       run: git clone https://github.com/Kode/KoreTools_macos.git
     - name: Copy binary
