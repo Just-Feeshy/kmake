@@ -22,17 +22,14 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.13.5'
-    - name: Export SDKROOT
-      run: echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
-    - name: Configure
+    - name: Build for x64
       env:
         DEPLOY: 10.13
-        CC:  "clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
-        CXX: "clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
-        LD:  "ld.lld -arch x86_64 -platform_version macos $DEPLOY 13.0"
-        AR: llvm-ar
-        NM: llvm-nm
       run: |
+        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+        export CC="clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
+        export CXX="clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
+        export LD="ld.lld -arch x86_64 -platform_version macos $DEPLOY 13.0"
         ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling
         make -j$(sysctl -n hw.logicalcpu)
     - name: Get KoreTools_macos
