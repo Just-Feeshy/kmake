@@ -34,12 +34,9 @@ jobs:
 
     - name: Build in Alpine chroot
       env:
-        CC: clang
-        CXX: clang++
-        LD: ld.lld
       run: |
         cd /home/runner/work/kmake/kmake
-        ./configure --openssl-no-asm --without-intl --fully-static
+        ./configure --openssl-no-asm --without-intl --fully-static --use-clang
         make -j$(nproc)
       shell: alpine.sh --root {0}
 
