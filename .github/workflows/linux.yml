@@ -45,7 +45,7 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
-        make -j$(nproc)
+        make
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_x64
@@ -121,7 +121,7 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
-        make -j$(nproc)
+        make
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_arm64
@@ -199,7 +199,7 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
-        make -j$(nproc)
+        make
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_arm
