@@ -176,16 +176,23 @@ jobs:
     - name: Build in Alpine chroot
       env:
         SYSROOT: /home/runner/work/armv7l-linux-musleabihf-cross/armv7l-linux-musleabihf
-        CC: clang
-        CXX: clang++
-        LD: ld.lld
-        CFLAGS:  --target=armv7l-linux-musleabihf --sysroot=$SYSROOT
-        CXXFLAGS: ${{ env.CFLAGS }}
-        LDFLAGS: --target=armv7l-linux-musleabihf --sysroot=$SYSROOT -static -fuse-ld=lld
+        TOOLCHAIN: /home/runner/work/armv7l-linux-musleabihf-cross
         AR:  armv7l-linux-musleabihf-ar
         NM:  armv7l-linux-musleabihf-nm
       run: |
-        export PATH=$PATH:/home/runner/work/armv7l-linux-musleabihf-cross/bin
+        export PATH="$PATH:$TOOLCHAIN/bin"
+        export CC="clang --target=armv7l-linux-musleabihf           \
+                      --sysroot=$SYSROOT                        \
+                      --gcc-toolchain=$TOOLCHAIN"
+        export CXX="$CC -stdlib=libc++"
+        export LD="ld.lld --sysroot=$SYSROOT -static"
+        export CFLAGS="--target=armv7l-linux-musleabihf --sysroot=$SYSROOT"
+        export CXXFLAGS="$CFLAGS"
+        export LDFLAGS="--target=armv7l-linux-musleabihf --sysroot=$SYSROOT -static -fuse-ld=lld"
+        
+        export CC_host=clang
+        export CXX_host=clang++
+
         cd /home/runner/work/kmake/kmake
         mkdir install
         ./configure --prefix=install --dest-cpu=arm --cross-compiling --dest-os=linux --openssl-no-asm --without-intl --fully-static --use_clang
