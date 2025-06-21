@@ -32,6 +32,7 @@ jobs:
           clang
           llvm20
           ninja-build
+          ninja-is-really-ninja
 
     - name: Build in Alpine chroot
       env:
@@ -102,6 +103,7 @@ jobs:
           clang
           llvm20
           ninja-build
+          ninja-is-really-ninja
 
     - name: Disable QEMU emulation
       run: |
@@ -177,6 +179,7 @@ jobs:
           clang
           llvm20
           ninja-build
+          ninja-is-really-ninja
 
     - name: Disable QEMU emulation
       run: |
