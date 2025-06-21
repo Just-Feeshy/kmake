@@ -100,7 +100,9 @@ jobs:
           llvm20
 
     - name: Disable QEMU emulation
-      run: sudo update-binfmts --disable qemu-arm
+      run: |
+        apt-get install --no-install-recommends -y binfmt-support
+        sudo update-binfmts --disable qemu-arm
 
     - name: Build in Alpine chroot
       env:
