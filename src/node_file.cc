@@ -3809,29 +3809,29 @@ static void GetEmbeddedData(const FunctionCallbackInfo<Value>& args) {
 
   Local<Object> data = Object::New(isolate);
 
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "linux_idea_misc_xml"), FIXED_ONE_BYTE_STRING(isolate, linux_idea_misc_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "linux_idea_workspace_xml"), FIXED_ONE_BYTE_STRING(isolate, linux_idea_workspace_xml));
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "linux_idea_misc_xml"), FIXED_ONE_BYTE_STRING(isolate, linux_idea_misc_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "linux_idea_workspace_xml"), FIXED_ONE_BYTE_STRING(isolate, linux_idea_workspace_xml)).Check();
 
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_build_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_build_gradle));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_gitignore));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_properties"), FIXED_ONE_BYTE_STRING(isolate, android_gradle_properties));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradlew"), FIXED_ONE_BYTE_STRING(isolate, android_gradlew));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradlew_bat"), FIXED_ONE_BYTE_STRING(isolate, android_gradlew_bat));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_settings_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_settings_gradle));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_build_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_app_build_gradle));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_cmakelists_txt"), FIXED_ONE_BYTE_STRING(isolate, android_app_cmakelists_txt));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_app_gitignore));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_proguard_rules_pro"), FIXED_ONE_BYTE_STRING(isolate, android_app_proguard_rules_pro));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_properties"), FIXED_ONE_BYTE_STRING(isolate, android_gradle_wrapper_gradle_wrapper_properties));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_idea_gitignore));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_gradle_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_gradle_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_misc_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_misc_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_modules_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_modules_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_compiler_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_compiler_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_kotlinc_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_kotlinc_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_modules_my_application_iml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_modules_my_application_iml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_main_androidmanifest_xml"), FIXED_ONE_BYTE_STRING(isolate, android_main_androidmanifest_xml));
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_main_res_values_strings_xml"), FIXED_ONE_BYTE_STRING(isolate, android_main_res_values_strings_xml));
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_build_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_build_gradle)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_gitignore)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_properties"), FIXED_ONE_BYTE_STRING(isolate, android_gradle_properties)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradlew"), FIXED_ONE_BYTE_STRING(isolate, android_gradlew)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradlew_bat"), FIXED_ONE_BYTE_STRING(isolate, android_gradlew_bat)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_settings_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_settings_gradle)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_build_gradle"), FIXED_ONE_BYTE_STRING(isolate, android_app_build_gradle)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_cmakelists_txt"), FIXED_ONE_BYTE_STRING(isolate, android_app_cmakelists_txt)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_app_gitignore)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_app_proguard_rules_pro"), FIXED_ONE_BYTE_STRING(isolate, android_app_proguard_rules_pro)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_properties"), FIXED_ONE_BYTE_STRING(isolate, android_gradle_wrapper_gradle_wrapper_properties)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_gitignore"), FIXED_ONE_BYTE_STRING(isolate, android_idea_gitignore)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_gradle_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_gradle_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_misc_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_misc_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_modules_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_modules_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_compiler_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_compiler_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_kotlinc_xml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_kotlinc_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_idea_modules_my_application_iml"), FIXED_ONE_BYTE_STRING(isolate, android_idea_modules_my_application_iml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_main_androidmanifest_xml"), FIXED_ONE_BYTE_STRING(isolate, android_main_androidmanifest_xml)).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_main_res_values_strings_xml"), FIXED_ONE_BYTE_STRING(isolate, android_main_res_values_strings_xml)).Check();
 
   args.GetReturnValue().Set(data);
 }
@@ -3842,7 +3842,7 @@ static void GetEmbeddedBinaryData(const FunctionCallbackInfo<Value>& args) {
 
   Local<Object> data = Object::New(isolate);
   
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_jar"), Buffer::New(isolate, (char*)android_gradle_wrapper_gradle_wrapper_jar, sizeof(android_gradle_wrapper_gradle_wrapper_jar)).ToLocalChecked());
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_jar"), Buffer::New(isolate, (char*)android_gradle_wrapper_gradle_wrapper_jar, sizeof(android_gradle_wrapper_gradle_wrapper_jar)).ToLocalChecked()).Check();
 
   args.GetReturnValue().Set(data);
 }
