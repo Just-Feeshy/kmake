@@ -83,6 +83,7 @@ jobs:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
 
   build-aarch64:
+    # see https://github.com/jirutka/setup-alpine/pull/22
     runs-on: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v2
@@ -159,6 +160,7 @@ jobs:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
 
   build-armv7l:
+    # see https://github.com/jirutka/setup-alpine/pull/22
     runs-on: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v2
@@ -192,6 +194,7 @@ jobs:
         CXX: clang++
         LD: ld.lld
         AR: llvm-ar
+        # Work around an openssl problem
         CFLAGS:   "-U__ILP32__"
         CXXFLAGS: "-U__ILP32__"
       run: |
