@@ -7,6 +7,8 @@
 #include "simdutf.h"
 #include "util-inl.h"
 
+char* g_kmake_dev_path = NULL;
+
 namespace node {
 namespace builtins {
 
@@ -190,35 +192,54 @@ static std::string OnDiskFileName(const char* id) {
 
   return filename;
 }
+#else
+static std::string OnDiskFileName(const char* id) {
+  std::string filename = g_kmake_dev_path;
+  filename += "/";
+
+  if (strncmp(id, "internal/deps", strlen("internal/deps")) == 0) {
+    id += strlen("internal/");
+  } else {
+    filename += "lib/";
+  }
+  filename += id;
+  filename += ".js";
+
+  return filename;
+}
 #endif  // NODE_BUILTIN_MODULES_PATH
 
 MaybeLocal<String> BuiltinLoader::LoadBuiltinSource(Isolate* isolate,
                                                     const char* id) const {
   auto source = source_.read();
 #ifndef NODE_BUILTIN_MODULES_PATH
-  const auto source_it = source->find(id);
-  if (source_it == source->end()) [[unlikely]] {
-    fprintf(stderr, "Cannot find native builtin: \"%s\".\n", id);
-    ABORT();
-  }
-  return source_it->second.ToStringChecked(isolate);
-#else   // !NODE_BUILTIN_MODULES_PATH
-  std::string filename = OnDiskFileName(id);
+  if (g_kmake_dev_path == NULL) {
+    const auto source_it = source->find(id);
+    if (source_it == source->end()) [[unlikely]] {
+      fprintf(stderr, "Cannot find native builtin: \"%s\".\n", id);
+      ABORT();
+    }
+    return source_it->second.ToStringChecked(isolate);
+  } else {
+#endif
+    std::string filename = OnDiskFileName(id);
 
-  std::string contents;
-  int r = ReadFileSync(&contents, filename.c_str());
-  if (r != 0) {
-    const std::string buf = SPrintF("Cannot read local builtin. %s: %s \"%s\"",
-                                    uv_err_name(r),
-                                    uv_strerror(r),
-                                    filename);
-    Local<String> message = OneByteString(isolate, buf);
-    isolate->ThrowException(Exception::Error(message));
-    return MaybeLocal<String>();
+    std::string contents;
+    int r = ReadFileSync(&contents, filename.c_str());
+    if (r != 0) {
+      const std::string buf = SPrintF("Cannot read local builtin. %s: %s \"%s\"",
+                                      uv_err_name(r),
+                                      uv_strerror(r),
+                                      filename);
+      Local<String> message = OneByteString(isolate, buf);
+      isolate->ThrowException(Exception::Error(message));
+      return MaybeLocal<String>();
+    }
+    return String::NewFromUtf8(
+        isolate, contents.c_str(), NewStringType::kNormal, contents.length());
+#ifndef NODE_BUILTIN_MODULES_PATH
   }
-  return String::NewFromUtf8(
-      isolate, contents.c_str(), NewStringType::kNormal, contents.length());
-#endif  // NODE_BUILTIN_MODULES_PATH
+#endif
 }
 
 namespace {
