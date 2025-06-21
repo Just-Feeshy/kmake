@@ -173,6 +173,10 @@ jobs:
     - name: Build in Alpine chroot
       env:
         SYSROOT: /home/runner/work/armv7l-linux-musleabihf-cross/armv7l-linux-musleabihf
+        CC: clang
+        CXX: clang++
+        LD: ld.lld
+        AR: llvm-ar
         CFLAGS:  --target=armv7l-linux-musleabihf --sysroot=$SYSROOT
         CXXFLAGS: ${{ env.CFLAGS }}
         LDFLAGS: --target=armv7l-linux-musleabihf --sysroot=$SYSROOT -static -fuse-ld=lld
