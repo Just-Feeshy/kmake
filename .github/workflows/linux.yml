@@ -163,6 +163,7 @@ jobs:
           linux-headers
           git
           bash
+          clang
 
     - name: Download and extract musl
       working-directory: /home/runner/work
