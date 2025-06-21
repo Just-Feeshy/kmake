@@ -31,6 +31,7 @@ jobs:
           bash
           clang
           llvm20
+          ninja-build
 
     - name: Build in Alpine chroot
       env:
@@ -39,8 +40,10 @@ jobs:
         LD: ld.lld
         AR: llvm-ar
       run: |
+        export CFLAGS="$CFLAGS -w"
+        export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
-        ./configure --openssl-no-asm --without-intl --fully-static --use_clang
+        ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make -j$(nproc)
       shell: alpine.sh --root {0}
 
@@ -98,6 +101,7 @@ jobs:
           bash
           clang
           llvm20
+          ninja-build
 
     - name: Disable QEMU emulation
       run: |
@@ -111,8 +115,10 @@ jobs:
         LD: ld.lld
         AR: llvm-ar
       run: |
+        export CFLAGS="$CFLAGS -w"
+        export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
-        ./configure --openssl-no-asm --without-intl --fully-static --use_clang
+        ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make -j$(nproc)
       shell: alpine.sh --root {0}
 
@@ -170,6 +176,7 @@ jobs:
           bash
           clang
           llvm20
+          ninja-build
 
     - name: Disable QEMU emulation
       run: |
@@ -185,8 +192,10 @@ jobs:
         CFLAGS:   "-U__ILP32__"
         CXXFLAGS: "-U__ILP32__"
       run: |
+        export CFLAGS="$CFLAGS -w"
+        export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
-        ./configure --openssl-no-asm --without-intl --fully-static --use_clang
+        ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make -j$(nproc)
       shell: alpine.sh --root {0}
 
