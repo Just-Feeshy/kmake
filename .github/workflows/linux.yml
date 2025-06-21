@@ -30,6 +30,7 @@ jobs:
           linux-headers
           git
           bash
+          clang
 
     - name: Build in Alpine chroot
       env:
@@ -101,10 +102,6 @@ jobs:
         tar --extract --preserve-permissions --file aarch64-linux-musl-cross.tgz
 
     - name: Build in Alpine chroot
-      env:
-        CC: clang
-        CXX: clang++
-        LD: ld.lld
       run: |
         export PATH=$PATH:/home/runner/work/aarch64-linux-musl-cross/bin
         cd /home/runner/work/kmake/kmake
@@ -173,10 +170,6 @@ jobs:
         tar --extract --preserve-permissions --file armv7l-linux-musleabihf-cross.tgz
 
     - name: Build in Alpine chroot
-      env:
-        CC: clang
-        CXX: clang++
-        LD: ld.lld
       run: |
         export PATH=$PATH:/home/runner/work/armv7l-linux-musleabihf-cross/bin
         cd /home/runner/work/kmake/kmake
