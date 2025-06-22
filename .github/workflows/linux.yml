@@ -18,13 +18,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Configure sccache
-      uses: actions/github-script@v7
-      with:
-        script: |
-          core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-    
     - name: Setup latest Alpine Linux
       uses: jirutka/setup-alpine@v1
       with:
@@ -42,19 +35,26 @@ jobs:
           ninja-is-really-ninja
           sccache
 
+    - name: Setup env
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
+
     - name: Build in Alpine chroot
       env:
         CC: "sccache clang"
         CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
-        SCCACHE_GHA_ENABLED: "true"
       run: |
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        sccache --show-stats
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_x64
@@ -136,13 +136,13 @@ jobs:
         CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
-        SCCACHE_GHA_ENABLED: "true"
       run: |
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        sccache --show-stats
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_arm64
@@ -224,7 +224,6 @@ jobs:
         CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
-        SCCACHE_GHA_ENABLED: "true"
         # Work around an openssl problem
         CFLAGS:   "-U__ILP32__"
         CXXFLAGS: "-U__ILP32__"
@@ -234,6 +233,7 @@ jobs:
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        sccache --show-stats
       shell: alpine.sh --root {0}
 
     - name: Get KoreTools_linux_arm

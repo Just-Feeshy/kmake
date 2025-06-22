@@ -53,7 +53,9 @@ jobs:
       run: git clone https://github.com/Kode/KoreTools_macos.git
     - name: Create Universal Binary
       run: |
-        lipo -create ../node-arm64 ../node-x64 -output KoreTools_macos/kmake
+        lipo -create ../node-arm64 ../node-x64 -output kmake_big
+        brew install upx
+        upx --lzma -o KoreTools_macos/kmake kmake_big
         codesign --sign - --timestamp --force KoreTools_macos/kmake
     - name: Set name
       run: git config --global user.name "Robbot"
