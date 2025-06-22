@@ -98,15 +98,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Configure sccache
-      uses: actions/github-script@v7
-      with:
-        script: |
-          core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-    
-    - uses: mozilla-actions/sccache-action@v0.0.9
-
     - name: Setup latest Alpine Linux
       uses: jirutka/setup-alpine@v1
       with:
@@ -125,6 +116,14 @@ jobs:
           ninja-build
           ninja-is-really-ninja
           sccache
+
+    - name: Setup env
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
+        echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
 
     - name: Disable QEMU emulation
       run: |
@@ -186,15 +185,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Configure sccache
-      uses: actions/github-script@v7
-      with:
-        script: |
-          core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-    
-    - uses: mozilla-actions/sccache-action@v0.0.9
-
     - name: Setup latest Alpine Linux
       uses: jirutka/setup-alpine@v1
       with:
@@ -213,6 +203,14 @@ jobs:
           ninja-build
           ninja-is-really-ninja
           sccache
+
+    - name: Setup env
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
+        echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
 
     - name: Disable QEMU emulation
       run: |

@@ -19,14 +19,11 @@ jobs:
     
     steps:
     - uses: actions/checkout@v2
-    - uses: mozilla-actions/sccache-action@v0.0.9
     - uses: actions/setup-python@v5
       with:
         python-version: '3.13.5'
         architecture: 'x64'
     - name: Compile
-      env:
-        SCCACHE_GHA_ENABLED: "true"
       run: .\vcbuild.bat openssl-no-asm without-intl
     - name: Get KoreTools_windows_x64
       run: git clone https://github.com/Kode/KoreTools_windows_x64.git
