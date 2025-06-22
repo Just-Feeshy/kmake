@@ -24,18 +24,10 @@ jobs:
         python-version: '3.13.5'
     - name: Select Xcode
       run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-    - name: Build for ARM
-      run: |
-        export CFLAGS="$CFLAGS -w"
-        export CXXFLAGS="$CXXFLAGS -w"
-        ./configure --openssl-no-asm --without-intl --dest-cpu=arm64 --ninja
-        make
-        cp out/Release/node ../node-arm64
     - name: Build for x64
       env:
         DEPLOY: 10.13
       run: |
-        git clean -xdf
         export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
         export CC="clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
         export CXX="clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
