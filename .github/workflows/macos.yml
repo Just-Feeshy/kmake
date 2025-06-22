@@ -34,7 +34,7 @@ jobs:
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         export LD="ld.lld -arch x86_64 -platform_version macos $DEPLOY 13.0"
-        ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling --ninja
+        ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling
         make
         cp out/Release/node ../node-x64
     - name: Get KoreTools_macos
