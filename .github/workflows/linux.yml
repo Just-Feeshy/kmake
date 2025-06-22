@@ -51,6 +51,7 @@ jobs:
         AR: llvm-ar
         SCCACHE_GHA_ENABLED: "true"
       run: |
+        which sccache
         ln "$(which sccache)" /usr/local/bin/clang
         ln "$(which sccache)" /usr/local/bin/clang++
         export CFLAGS="$CFLAGS -w"
