@@ -42,18 +42,16 @@ jobs:
           llvm20
           ninja-build
           ninja-is-really-ninja
+          sccache
 
     - name: Build in Alpine chroot
       env:
-        CC: clang
-        CXX: clang++
+        CC: "sccache clang"
+        CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
         SCCACHE_GHA_ENABLED: "true"
       run: |
-        which sccache
-        ln "$(which sccache)" /usr/local/bin/clang
-        ln "$(which sccache)" /usr/local/bin/clang++
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
@@ -127,6 +125,7 @@ jobs:
           llvm20
           ninja-build
           ninja-is-really-ninja
+          sccache
 
     - name: Disable QEMU emulation
       run: |
@@ -135,14 +134,12 @@ jobs:
 
     - name: Build in Alpine chroot
       env:
-        CC: clang
-        CXX: clang++
+        CC: "sccache clang"
+        CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
         SCCACHE_GHA_ENABLED: "true"
       run: |
-        ln "$(which sccache)" /usr/local/bin/clang
-        ln "$(which sccache)" /usr/local/bin/clang++
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
@@ -216,6 +213,7 @@ jobs:
           llvm20
           ninja-build
           ninja-is-really-ninja
+          sccache
 
     - name: Disable QEMU emulation
       run: |
@@ -224,8 +222,8 @@ jobs:
 
     - name: Build in Alpine chroot
       env:
-        CC: clang
-        CXX: clang++
+        CC: "sccache clang"
+        CXX: "sccache clang++"
         LD: ld.lld
         AR: llvm-ar
         SCCACHE_GHA_ENABLED: "true"
@@ -233,8 +231,6 @@ jobs:
         CFLAGS:   "-U__ILP32__"
         CXXFLAGS: "-U__ILP32__"
       run: |
-        ln "$(which sccache)" /usr/local/bin/clang
-        ln "$(which sccache)" /usr/local/bin/clang++
         export CFLAGS="$CFLAGS -w"
         export CXXFLAGS="$CXXFLAGS -w"
         cd /home/runner/work/kmake/kmake
