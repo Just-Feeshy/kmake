@@ -41,6 +41,7 @@ jobs:
         echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
         echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
         echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
+        echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
 
     - name: Build in Alpine chroot
       env:
