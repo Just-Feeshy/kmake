@@ -1084,7 +1084,7 @@ export async function run(options: any, loglog: any): Promise<string> {
 				}
 
 				fs.writeFileSync(path.join(options.to, 'build.bat'), '@call "' + vsvars + '"\n' + '@MSBuild.exe "' + path.resolve(options.to, solutionName + '.vcxproj') + '" /m /clp:ErrorsOnly ' + signing + ' /p:Configuration=' + (options.debug ? 'Debug' : 'Release') + ',Platform=' + compilePlatform);
-				make = child_process.spawn('build.bat', [], {cwd: options.to});
+				make = child_process.spawn('build.bat', [], {cwd: options.to, shell: true});
 			}
 			else {
 				log.error('Visual Studio not found.');
