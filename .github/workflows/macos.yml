@@ -35,7 +35,7 @@ jobs:
       env:
         DEPLOY: 10.13
       run: |
-        rm -rf out
+        make -C out/Release distclean
         export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
         export CC="clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
         export CXX="clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
