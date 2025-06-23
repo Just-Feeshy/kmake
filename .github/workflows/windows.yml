@@ -23,6 +23,24 @@ jobs:
       with:
         python-version: '3.13.5'
         architecture: 'x64'
+
+    - name: Install sccache + wrapper
+      shell: powershell
+      run: |
+        iwr -useb https://github.com/mozilla/sccache/releases/latest/download/sccache-x86_64-pc-windows-msvc.zip -OutFile sccache.zip
+        Expand-Archive sccache.zip -DestinationPath C:\sccache
+        New-Item -ItemType Directory -Path C:\sccache-wrap
+        Copy-Item C:\sccache\sccache.exe C:\sccache-wrap\sccache.exe
+        Copy-Item C:\sccache\sccache.exe C:\sccache-wrap\cl.exe
+        Copy-Item C:\sccache\sccache.exe C:\sccache-wrap\clang-cl.exe
+        echo "C:\sccache-wrap"                                            >> $env:GITHUB_PATH
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $env:GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $env:GITHUB_ENV
+        echo "SCCACHE_BUCKET=sccache"                                     >> $env:GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $env:GITHUB_ENV
+        echo "SCCACHE_REGION=auto"                                        >> $env:GITHUB_ENV
+        sccache --show-stats
+
     - name: Compile
       run: .\vcbuild.bat openssl-no-asm without-intl
     - name: Get KoreTools_windows_x64
