@@ -69,7 +69,7 @@ jobs:
       id: push1
       if: steps.commit.outcome == 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos_x64 push https://x-access-token:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
+      run: git -C KoreTools_macos_x64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
     - name: Pull
@@ -78,7 +78,7 @@ jobs:
     - name: Push binary again
       if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos_x64 push https://x-access-token:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
+      run: git -C KoreTools_macos_x64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
 
@@ -137,7 +137,7 @@ jobs:
       id: push1
       if: steps.commit.outcome == 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos_arm64 push https://x-access-token:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
+      run: git -C KoreTools_macos_arm64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
     - name: Pull
@@ -146,6 +146,6 @@ jobs:
     - name: Push binary again
       if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos_arm64 push https://x-access-token:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
+      run: git -C KoreTools_macos_arm64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
