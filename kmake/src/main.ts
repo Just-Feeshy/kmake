@@ -19,6 +19,7 @@ import { VSCodeExporter } from 'kmake/Exporters/VSCodeExporter';
 import { FreeBSDExporter } from 'kmake/Exporters/FreeBSDExporter';
 import { JsonExporter } from 'kmake/Exporters/JsonExporter';
 import { Compiler } from 'kmake/Compiler';
+import { Architecture } from './Architecture';
 
 let _global: any = global;
 _global.__base = __dirname + '/';
@@ -1028,11 +1029,22 @@ export async function run(options: any, loglog: any): Promise<string> {
 		}
 		else if (isPlatform(options, Platform.OSX) || isPlatform(options, Platform.iOS) || isPlatform(options, Platform.tvOS)) {
 			let xcodeOptions = ['-configuration', options.debug ? 'Debug' : 'Release', '-project', solutionName + '.xcodeproj', '-quiet'];
+
 			if (options.nosigning) {
 				xcodeOptions.push('CODE_SIGN_IDENTITY=""');
 				xcodeOptions.push('CODE_SIGNING_REQUIRED=NO');
 				xcodeOptions.push('CODE_SIGNING_ALLOWED=NO');
 			}
+
+			if (Options.architecture === Architecture.Arm7 || Options.architecture === Architecture.Arm8) {
+				xcodeOptions.push('-arch');
+				xcodeOptions.push('arm64');
+			}
+			else if (Options.architecture === Architecture.X86 || Options.architecture === Architecture.X86_64) {
+				xcodeOptions.push('-arch');
+				xcodeOptions.push('x86_64');
+			}
+
 			make = child_process.spawn('xcodebuild', xcodeOptions, { cwd: options.to });
 		}
 		else if (isPlatform(options, Platform.Windows)
