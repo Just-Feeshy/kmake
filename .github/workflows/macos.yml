@@ -8,15 +8,13 @@ on:
     branches:
     - main
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-
-    runs-on: macOS-latest
-    
+  build-x64:
+    runs-on: macOS-13
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-python@v5
@@ -37,7 +35,75 @@ jobs:
     - name: Brew
       run: brew install sccache upx
 
-    - name: Build for ARM
+    - name: Build
+      env:
+        SCCACHE_GHA_ENABLED: "true"
+      run: |
+        export CC="sccache clang"
+        export CXX="sccache clang++"
+        export CFLAGS="$CFLAGS -w"
+        export CXXFLAGS="$CXXFLAGS -w"
+        ./configure --openssl-no-asm --without-intl --dest-cpu=x64 --ninja
+        make
+        sccache --show-stats
+
+    - name: Get KoreTools_macos_x64
+      run: git clone https://github.com/Kode/KoreTools_macos_x64.git
+    - name: Copy binary
+      run: cp out/Release/node KoreTools_macos_x64/kmake
+    - name: Set name
+      run: git config --global user.name "Robbot"
+    - name: Set email
+      run: git config --global user.email "robbot2019@robdangero.us"
+    - name: Add binary
+      run: git -C KoreTools_macos_x64 add .
+    - name: Commit binary
+      id: commit
+      continue-on-error: true
+      run: git -C KoreTools_macos_x64 commit -a -m "Update macOS binary to $GITHUB_SHA."
+    - name: Tag binary
+      if: steps.commit.outcome == 'success'
+      run: git -C KoreTools_macos_x64 tag macos_$GITHUB_SHA
+    - name: Push binary
+      id: push1
+      if: steps.commit.outcome == 'success'
+      continue-on-error: true
+      run: git -C KoreTools_macos_x64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
+      env:
+        ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
+    - name: Pull
+      if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
+      run: git -C KoreTools_macos_x64 pull --no-rebase
+    - name: Push binary again
+      if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
+      continue-on-error: true
+      run: git -C KoreTools_macos_x64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_x64.git main --tags
+      env:
+        ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
+
+  build-arm64:
+    runs-on: macOS-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13.5'
+
+    - name: Setup env
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
+        echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
+
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+    - name: Brew
+      run: brew install sccache upx
+
+    - name: Build
       env:
         SCCACHE_GHA_ENABLED: "true"
       run: |
@@ -47,60 +113,38 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         ./configure --openssl-no-asm --without-intl --dest-cpu=arm64 --ninja
         make
-        cp out/Release/node ../node-arm64
         sccache --show-stats
 
-    - name: Build for x64
-      env:
-        DEPLOY: 10.13
-        SCCACHE_GHA_ENABLED: "true"
-      run: |
-        make distclean
-        export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-        export CC="sccache clang --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY"
-        export CXX="sccache clang++ --target=x86_64-apple-darwin -isysroot $SDKROOT -mmacosx-version-min=$DEPLOY -stdlib=libc++"
-        export CFLAGS="$CFLAGS -w"
-        export CXXFLAGS="$CXXFLAGS -w"
-        export LD="ld.lld -arch x86_64 -platform_version macos $DEPLOY 13.0"
-        ./configure --openssl-no-asm --without-intl --dest-cpu=x86_64 --cross-compiling
-        make
-        cp out/Release/node ../node-x64
-        sccache --show-stats
-
-    - name: Get KoreTools_macos
-      run: git clone https://github.com/Kode/KoreTools_macos.git
-    - name: Create Universal Binary
-      run: |
-        lipo -create ../node-arm64 ../node-x64 -output kmake_big
-        rm KoreTools_macos/kmake
-        upx --lzma -o KoreTools_macos/kmake kmake_big
-        codesign --sign - --timestamp --force KoreTools_macos/kmake
+    - name: Get KoreTools_macos_arm64
+      run: git clone https://github.com/Kode/KoreTools_macos_arm64.git
+    - name: Copy binary
+      run: cp out/Release/node KoreTools_macos_arm64/kmake
     - name: Set name
       run: git config --global user.name "Robbot"
     - name: Set email
       run: git config --global user.email "robbot2019@robdangero.us"
     - name: Add binary
-      run: git -C KoreTools_macos add .
+      run: git -C KoreTools_macos_arm64 add .
     - name: Commit binary
       id: commit
       continue-on-error: true
-      run: git -C KoreTools_macos commit -a -m "Update macOS binary to $GITHUB_SHA."
+      run: git -C KoreTools_macos_arm64 commit -a -m "Update macOS binary to $GITHUB_SHA."
     - name: Tag binary
       if: steps.commit.outcome == 'success'
-      run: git -C KoreTools_macos tag macos_$GITHUB_SHA
+      run: git -C KoreTools_macos_arm64 tag macos_$GITHUB_SHA
     - name: Push binary
       id: push1
       if: steps.commit.outcome == 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos.git main --tags
+      run: git -C KoreTools_macos_arm64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
     - name: Pull
       if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
-      run: git -C KoreTools_macos pull --no-rebase
+      run: git -C KoreTools_macos_arm64 pull --no-rebase
     - name: Push binary again
       if: steps.commit.outcome == 'success' && steps.push1.outcome != 'success'
       continue-on-error: true
-      run: git -C KoreTools_macos push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos.git main --tags
+      run: git -C KoreTools_macos_arm64 push https://Kode-Robbot:$ROBBOT_PASS@github.com/Kode/KoreTools_macos_arm64.git main --tags
       env:
         ROBBOT_PASS: ${{ secrets.ROBBOT_PASS }}
