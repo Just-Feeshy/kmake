@@ -191,10 +191,10 @@ export class AndroidExporter extends Exporter {
 		else {
 			switch (Options.architecture) {
 				case Architecture.Default: arch = ''; break;
-				case Architecture.Arm7: arch = 'armeabi-v7a'; break;
-				case Architecture.Arm8: arch = 'arm64-v8a'; break;
-				case Architecture.X86: arch = 'x86'; break;
-				case Architecture.X86_64: arch = 'x86_64'; break;
+				case Architecture.arm: arch = 'armeabi-v7a'; break;
+				case Architecture.arm64: arch = 'arm64-v8a'; break;
+				case Architecture.x64: arch = 'x86'; break;
+				case Architecture.x64: arch = 'x86_64'; break;
 				default: throw 'Unknown architecture ' + Options.architecture;
 			}
 			if (Options.architecture !== Architecture.Default) {

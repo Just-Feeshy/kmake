@@ -1036,11 +1036,11 @@ export async function run(options: any, loglog: any): Promise<string> {
 				xcodeOptions.push('CODE_SIGNING_ALLOWED=NO');
 			}
 
-			if (Options.architecture === Architecture.Arm7 || Options.architecture === Architecture.Arm8) {
+			if (Options.architecture === Architecture.arm || Options.architecture === Architecture.arm64) {
 				xcodeOptions.push('-arch');
 				xcodeOptions.push('arm64');
 			}
-			else if (Options.architecture === Architecture.X86 || Options.architecture === Architecture.X86_64) {
+			else if (Options.architecture === Architecture.x86 || Options.architecture === Architecture.x64) {
 				xcodeOptions.push('-arch');
 				xcodeOptions.push('x86_64');
 			}
