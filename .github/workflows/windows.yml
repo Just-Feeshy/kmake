@@ -30,7 +30,6 @@ jobs:
         iwr -useb https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-x86_64-pc-windows-msvc.zip -OutFile sccache.zip
         Expand-Archive sccache.zip -DestinationPath C:\sccache
         New-Item -ItemType Directory -Path C:\sccache-wrap
-        Copy-Item C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe C:\sccache-wrap\sccache.exe
         Copy-Item C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe C:\sccache-wrap\cl.exe
         Copy-Item C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe C:\sccache-wrap\clang-cl.exe
         echo "C:\sccache-wrap"                                            >> $env:GITHUB_PATH
@@ -39,7 +38,7 @@ jobs:
         echo "SCCACHE_BUCKET=sccache"                                     >> $env:GITHUB_ENV
         echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $env:GITHUB_ENV
         echo "SCCACHE_REGION=auto"                                        >> $env:GITHUB_ENV
-        sccache --show-stats
+        C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe --show-stats
 
     - name: Compile
       run: .\vcbuild.bat openssl-no-asm without-intl
