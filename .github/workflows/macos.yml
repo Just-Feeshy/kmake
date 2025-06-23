@@ -30,7 +30,7 @@ jobs:
         echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
 
     - name: Select Xcode
-      run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+      run: sudo xcode-select -s /Applications/Xcode_14.3.app/Contents/Developer
 
     - name: Brew
       run: brew install sccache upx
@@ -63,7 +63,7 @@ jobs:
       run: git -C KoreTools_macos_x64 commit -a -m "Update macOS binary to $GITHUB_SHA."
     - name: Tag binary
       if: steps.commit.outcome == 'success'
-      run: git -C KoreTools_macos_x64 tag macos_$GITHUB_SHA
+      run: git -C KoreTools_macos_x64 tag macos_x64_$GITHUB_SHA
     - name: Push binary
       id: push1
       if: steps.commit.outcome == 'success'
@@ -131,7 +131,7 @@ jobs:
       run: git -C KoreTools_macos_arm64 commit -a -m "Update macOS binary to $GITHUB_SHA."
     - name: Tag binary
       if: steps.commit.outcome == 'success'
-      run: git -C KoreTools_macos_arm64 tag macos_$GITHUB_SHA
+      run: git -C KoreTools_macos_arm64 tag macos_arm64_$GITHUB_SHA
     - name: Push binary
       id: push1
       if: steps.commit.outcome == 'success'
