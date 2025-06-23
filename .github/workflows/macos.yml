@@ -28,6 +28,7 @@ jobs:
         echo "SCCACHE_BUCKET=sccache"                                     >> $GITHUB_ENV
         echo "SCCACHE_ENDPOINT=http://robdangero.us:9000"                 >> $GITHUB_ENV
         echo "SCCACHE_REGION=auto"                                        >> $GITHUB_ENV
+        echo "/usr/local/opt/llvm/bin"                                    >> $GITHUB_PATH
 
     - name: Select Xcode
       run: sudo xcode-select -s /Applications/Xcode_14.3.app/Contents/Developer
