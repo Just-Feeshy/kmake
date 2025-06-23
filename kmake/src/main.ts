@@ -19,7 +19,7 @@ import { VSCodeExporter } from 'kmake/Exporters/VSCodeExporter';
 import { FreeBSDExporter } from 'kmake/Exporters/FreeBSDExporter';
 import { JsonExporter } from 'kmake/Exporters/JsonExporter';
 import { Compiler } from 'kmake/Compiler';
-import { Architecture } from './Architecture';
+import { Architecture } from 'kmake/Architecture';
 
 let _global: any = global;
 _global.__base = __dirname + '/';
