@@ -3836,13 +3836,15 @@ static void GetEmbeddedData(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(data);
 }
 
+static void NoFree(char* data, void* hint) {}
+
 static void GetEmbeddedBinaryData(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   Isolate* isolate = env->isolate();
 
   Local<Object> data = Object::New(isolate);
   
-  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_jar"), Buffer::New(isolate, (char*)android_gradle_wrapper_gradle_wrapper_jar, sizeof(android_gradle_wrapper_gradle_wrapper_jar)).ToLocalChecked()).Check();
+  data->Set(env->context(), FIXED_ONE_BYTE_STRING(isolate, "android_gradle_wrapper_gradle_wrapper_jar"), Buffer::New(isolate, (char*)android_gradle_wrapper_gradle_wrapper_jar, sizeof(android_gradle_wrapper_gradle_wrapper_jar), NoFree, nullptr).ToLocalChecked()).Check();
 
   args.GetReturnValue().Set(data);
 }
