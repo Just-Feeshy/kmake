@@ -55,6 +55,7 @@ jobs:
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        strip ./out/Release/node
         sccache --show-stats
       shell: alpine.sh --root {0}
 
@@ -142,6 +143,7 @@ jobs:
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        strip ./out/Release/node
         sccache --show-stats
       shell: alpine.sh --root {0}
 
@@ -232,6 +234,7 @@ jobs:
         cd /home/runner/work/kmake/kmake
         ./configure --openssl-no-asm --without-intl --fully-static --use_clang --ninja
         make
+        strip ./out/Release/node
         sccache --show-stats
       shell: alpine.sh --root {0}
 

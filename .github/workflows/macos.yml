@@ -46,6 +46,8 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         ./configure --openssl-no-asm --without-intl --dest-cpu=x64 --ninja
         make
+        strip ./out/Release/node
+        codesign --sign - --timestamp --force ./out/Release/node
         sccache --show-stats
 
     - name: Get KoreTools_macos_x64
@@ -114,6 +116,8 @@ jobs:
         export CXXFLAGS="$CXXFLAGS -w"
         ./configure --openssl-no-asm --without-intl --dest-cpu=arm64 --ninja
         make
+        strip ./out/Release/node
+        codesign --sign - --timestamp --force ./out/Release/node
         sccache --show-stats
 
     - name: Get KoreTools_macos_arm64
