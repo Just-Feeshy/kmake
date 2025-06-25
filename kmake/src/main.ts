@@ -775,7 +775,9 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 					executableName = project.getExecutableName();
 				}
 
-				if ((options.customTarget && options.customTarget.baseTarget === Platform.Linux) || options.target === Platform.Linux) {
+				if ((options.customTarget && options.customTarget.baseTarget === Platform.Linux) || options.target === Platform.Linux
+					|| (options.customTarget && options.customTarget.baseTarget === Platform.Pi) || options.target === Platform.Pi
+					|| (options.customTarget && options.customTarget.baseTarget === Platform.FreeBSD) || options.target === Platform.FreeBSD) {
 					if (options.lib) {
 						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName + '.a'), path.resolve(options.from.toString(), project.getDebugDir(), executableName + '.a'));
 					}
@@ -783,7 +785,13 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName + '.so'), path.resolve(options.from.toString(), project.getDebugDir(), executableName + '.so'));
 					}
 					else {
-						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName), path.resolve(options.from.toString(), project.getDebugDir(), executableName));
+						const targetPath = path.resolve(options.from.toString(), project.getDebugDir(), executableName);
+
+						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName), targetPath);
+
+						child_process.spawnSync('objcopy', ['--only-keep-debug', targetPath, targetPath + '.debug']);
+						child_process.spawnSync('strip', [targetPath]);
+						child_process.spawnSync('objcopy', ['--add-gnu-debuglink=' + executableName + '.debug', targetPath]);
 					}
 				}
 				else if ((options.customTarget && options.customTarget.baseTarget === Platform.Windows) || options.target === Platform.Windows) {
