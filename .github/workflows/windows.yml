@@ -39,7 +39,7 @@ jobs:
 
     - name: Compile
       run: |
-        .\vcbuild.bat openssl-no-asm without-intl
+        .\vcbuild.bat openssl-no-asm without-intl sccache
         C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe --show-stats
     - name: Get KoreTools_windows_x64
       run: git clone https://github.com/Kode/KoreTools_windows_x64.git
