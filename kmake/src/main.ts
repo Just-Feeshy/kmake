@@ -794,6 +794,13 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 						child_process.spawnSync('objcopy', ['--add-gnu-debuglink=' + executableName + '.debug', targetPath]);
 					}
 				}
+				else if (project.isCmd() && ((options.customTarget && options.customTarget.baseTarget === Platform.OSX) || options.target === Platform.OSX)) {
+					const executablePath = path.resolve(path.join(options.to.toString(), 'build', options.debug ? 'Debug' : 'Release'), executableName);
+
+					child_process.spawnSync('dsymutil', [executablePath]);
+					child_process.spawnSync('strip', ['-u', '-r', executablePath]);
+					child_process.spawnSync('codesign', ['--sign', '-', '--timestamp', '--force', executablePath]);
+				}
 				else if ((options.customTarget && options.customTarget.baseTarget === Platform.Windows) || options.target === Platform.Windows) {
 					const extension = (options.lib || options.dynlib) ? (options.lib ? '.lib' : '.dll') : '.exe';
 					const from =
@@ -805,6 +812,7 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 						: path.join(options.from.toString(), project.getDebugDir());
 					fs.copyFileSync(from, path.join(dir, executableName + extension));
 				}
+
 				if (options.run) {
 					if ((options.customTarget && options.customTarget.baseTarget === Platform.OSX) || options.target === Platform.OSX) {
 						const spawned = child_process.spawn(path.resolve(options.to.toString(), 'build', (options.debug ? 'Debug' : 'Release'), project.name + '.app', 'Contents', 'MacOS', project.name), {stdio: 'inherit', cwd: path.resolve(options.from.toString(), project.getDebugDir())});
