@@ -154,7 +154,6 @@ if /i "%1"=="doc"           set doc=1&goto arg-ok
 if /i "%1"=="binlog"        set extra_msbuild_args=/binaryLogger:out\%config%\node.binlog&goto arg-ok
 if /i "%1"=="compile-commands" set compile_commands=1&goto arg-ok
 if /i "%1"=="cfg"           set cfg=1&goto arg-ok
-if /i "%1"=="sccache"       set sccache=1&goto arg-ok
 
 echo Error: invalid command line option `%1`.
 exit /b 1
@@ -289,7 +288,6 @@ set "VSCMD_START_DIR=%CD%"
 set vcvars_call="%VCINSTALLDIR%\Auxiliary\Build\vcvarsall.bat" %vcvarsall_arg%
 echo calling: %vcvars_call%
 call %vcvars_call%
-if defined sccache set "PATH=C:\sccache-wrap;%PATH%"
 if errorlevel 1 goto msbuild-not-found
 if defined DEBUG_HELPER @ECHO ON
 :found_vs2022
