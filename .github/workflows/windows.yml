@@ -30,9 +30,7 @@ jobs:
         iwr -useb https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-x86_64-pc-windows-msvc.zip -OutFile sccache.zip
         Expand-Archive sccache.zip -DestinationPath C:\sccache
         New-Item -ItemType Directory -Path C:\sccache-wrap
-        Copy-Item C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe C:\sccache-wrap\cl.exe
         Copy-Item C:\sccache\sccache-v0.10.0-x86_64-pc-windows-msvc\sccache.exe C:\sccache-wrap\clang-cl.exe
-        echo "C:\sccache-wrap"                                            >> $env:GITHUB_PATH
         echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> $env:GITHUB_ENV
         echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $env:GITHUB_ENV
         echo "SCCACHE_BUCKET=sccache"                                     >> $env:GITHUB_ENV
