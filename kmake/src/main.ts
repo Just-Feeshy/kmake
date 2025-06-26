@@ -785,13 +785,14 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName + '.so'), path.resolve(options.from.toString(), project.getDebugDir(), executableName + '.so'));
 					}
 					else {
+						const executablePath = path.resolve(path.join(options.to.toString(), options.buildPath), executableName);
 						const targetPath = path.resolve(options.from.toString(), project.getDebugDir(), executableName);
 
-						fs.copyFileSync(path.resolve(path.join(options.to.toString(), options.buildPath), executableName), targetPath);
+						child_process.spawnSync('objcopy', ['--only-keep-debug', executablePath, executablePath + '.debug']);
+						child_process.spawnSync('strip', [executablePath]);
+						child_process.spawnSync('objcopy', ['--add-gnu-debuglink=' + executableName + '.debug', executablePath]);
 
-						child_process.spawnSync('objcopy', ['--only-keep-debug', targetPath, targetPath + '.debug']);
-						child_process.spawnSync('strip', [targetPath]);
-						child_process.spawnSync('objcopy', ['--add-gnu-debuglink=' + executableName + '.debug', targetPath]);
+						fs.copyFileSync(executablePath, targetPath);
 					}
 				}
 				else if (project.isCmd() && ((options.customTarget && options.customTarget.baseTarget === Platform.OSX) || options.target === Platform.OSX)) {
