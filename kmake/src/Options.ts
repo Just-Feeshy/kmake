@@ -16,6 +16,7 @@ export let Options = {
 	ccPath: '',
 	cxxPath: '',
 	arPath: '',
+	stripPath: '',
 	visualStudioVersion: VisualStudioVersion.VS2022,
 	followSymbolicLinks: true,
 	compile: false,

@@ -788,8 +788,10 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 						const executablePath = path.resolve(path.join(options.to.toString(), options.buildPath), executableName);
 						const targetPath = path.resolve(options.from.toString(), project.getDebugDir(), executableName);
 
+						const stripPath = Options.stripPath ? Options.stripPath : 'strip';
+
 						child_process.spawnSync('objcopy', ['--only-keep-debug', executablePath, executablePath + '.debug']);
-						child_process.spawnSync('strip', [executablePath]);
+						child_process.spawnSync(stripPath, [executablePath]);
 						child_process.spawnSync('objcopy', ['--add-gnu-debuglink=' + executableName + '.debug', executablePath]);
 
 						fs.copyFileSync(executablePath, targetPath);
@@ -798,8 +800,10 @@ function compileProject(make: child_process.ChildProcess, project: Project, solu
 				else if (project.isCmd() && ((options.customTarget && options.customTarget.baseTarget === Platform.OSX) || options.target === Platform.OSX)) {
 					const executablePath = path.resolve(path.join(options.to.toString(), 'build', options.debug ? 'Debug' : 'Release'), executableName);
 
+					const stripPath = Options.stripPath ? Options.stripPath : 'strip';
+
 					child_process.spawnSync('dsymutil', [executablePath]);
-					child_process.spawnSync('strip', ['-u', '-r', executablePath]);
+					child_process.spawnSync(stripPath, ['-u', '-r', executablePath]);
 					child_process.spawnSync('codesign', ['--sign', '-', '--timestamp', '--force', executablePath]);
 				}
 				else if ((options.customTarget && options.customTarget.baseTarget === Platform.Windows) || options.target === Platform.Windows) {
@@ -945,6 +949,10 @@ export async function run(options: any, loglog: any): Promise<string> {
 		Options.compiler = Compiler.Custom;
 	}
 
+	if (options.strip) {
+		Options.stripPath = options.strip;
+	}
+
 	if (options.ar) {
 		Options.arPath = options.ar;
 		Options.compiler = Compiler.Custom;
@@ -964,7 +972,9 @@ export async function run(options: any, loglog: any): Promise<string> {
 			log.error('Missing ar path');
 			error = true;
 		}
-		if (error) throw 'Missing compiler path(s)';
+		if (error) {
+			throw 'Missing compiler path(s)';
+		}
 	}
 
 	if (options.visualstudio !== undefined) {
