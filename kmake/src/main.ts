@@ -18,6 +18,7 @@ import { XCodeExporter } from 'kmake/Exporters/XCodeExporter';
 import { VSCodeExporter } from 'kmake/Exporters/VSCodeExporter';
 import { FreeBSDExporter } from 'kmake/Exporters/FreeBSDExporter';
 import { JsonExporter } from 'kmake/Exporters/JsonExporter';
+import { MesonExporter } from 'kmake/Exporters/MesonExporter';
 import { Compiler } from 'kmake/Compiler';
 import { Architecture } from 'kmake/Architecture';
 
@@ -415,7 +416,7 @@ function compileKong(project: Project, from: string, to: string, platform: strin
 
 		if (compilerPath !== '') {
 			let api = graphicsApi(platform);
-			
+
 			to = path.join(to, 'Kong-' + platform + '-' + api);
 			fs.ensureDirSync(to);
 
@@ -623,6 +624,9 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 	else if (options.json) {
 		exporter = new JsonExporter(options);
 	}
+  else if (options.meson) {
+    exporter = new MesonExporter(options);
+  }
 	else if (platform === Platform.iOS || platform === Platform.OSX || platform === Platform.tvOS) exporter = new XCodeExporter(options);
 	else if (platform === Platform.Android) exporter = new AndroidExporter(options);
 	else if (platform === Platform.Emscripten) exporter = new EmscriptenExporter(project, options);
@@ -682,7 +686,7 @@ async function exportKoremakeProject(from: string, to: string, platform: string,
 			log.error('Could not write korepath file');
 		}
 	}
-	
+
 	const hash = project.createHash(options.vscode, options.json, options.debug, platform);
 	let oldHash = null;
 	try {

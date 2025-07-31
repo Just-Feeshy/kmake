@@ -253,7 +253,7 @@ export class Project {
 		sha.update(json ? 'true' : 'false');
 		sha.update(debug ? 'true' : 'false');
 		sha.update(platform);
-		
+
 		return sha.digest('hex');
 	}
 
