@@ -13,10 +13,8 @@ export class MesonExporter extends Exporter {
 
 		this.writeFile(path.resolve(to, 'meson.build'));
 
-		// Collect include directories from project and add kore3/backend system includes
 		let includeDirs = [...project.getIncludeDirs()];
 
-		// Add kore3/backend system includes based on platform
 		let systemOs = '';
 		if (platform === Platform.Windows || platform === Platform.WindowsApp) {
 			systemOs = 'windows';
@@ -43,7 +41,6 @@ export class MesonExporter extends Exporter {
 			this.p();
 		}
 
-		// Add defines as compiler arguments instead of generating config header
 		let defineArgs: string[] = [];
 		if (project.getDefines().length > 0) {
 			for (const def of project.getDefines()) {
@@ -91,6 +88,13 @@ export class MesonExporter extends Exporter {
 			if (file.options && file.options.nocompile) {
 				return false;
 			}
+			
+			for (let exclude of project.excludes) {
+				if (project.matches(file.file, exclude)) {
+					return false;
+				}
+			}
+			
 			const ext = path.extname(file.file).toLowerCase();
 			let validExtensions = ['.c', '.cpp', '.cc', '.cxx'];
 			if (platform === Platform.iOS || platform === Platform.OSX || platform === Platform.tvOS) {
@@ -140,6 +144,7 @@ export class MesonExporter extends Exporter {
 
       if (defineArgs.length > 0) {
         this.p('objc_args = [');
+        this.p('  \'-fobjc-arc\',', 1);
 
         for (const def of defineArgs) {
           this.p('  \'' + def + '\',', 1);
@@ -194,7 +199,7 @@ export class MesonExporter extends Exporter {
 
 		let targetArgs = [];
 		if (allFiles.length > 0) {
-			targetArgs.push('target_files');
+			targetArgs.push('sources: target_files');
 		}
 
 		if (includeDirs.length > 0) {
@@ -214,6 +219,8 @@ export class MesonExporter extends Exporter {
 		if (project.getLibs().length > 0) {
 			targetArgs.push('dependencies : dependencies');
 		}
+
+    targetArgs.push('install : false');
 
 		if (project.linkerFlags.length > 0) {
 			this.p('link_args = [');
